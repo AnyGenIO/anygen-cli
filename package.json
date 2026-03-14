@@ -1,0 +1,39 @@
+{
+  "name": "@anygen/cli",
+  "version": "0.1.0",
+  "description": "AnyGen CLI - AI content generation platform CLI tool",
+  "type": "module",
+  "bin": {
+    "anygen": "./bin/anygen.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "anygen",
+    "cli",
+    "ai",
+    "content-generation"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "commander": "^13.1.0",
+    "playwright-core": "^1.50.0",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.0"
+  }
+}
