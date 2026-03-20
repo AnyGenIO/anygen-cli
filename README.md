@@ -1,14 +1,8 @@
-# AnyGen CLI
+# anygen-cli
 
-Command-line tool for [AnyGen](https://www.anygen.io) — an AI-powered content generation platform. Supports slides/PPT, documents, diagrams, websites, data analysis, research reports, storybooks, financial analysis, and image design.
+CLI for [AnyGen](https://www.anygen.io) — AI content generation platform. Generate slides, documents, diagrams, websites, research reports, and more from the terminal.
 
-## Features
-
-- **Discovery-driven**: Automatically fetches the API schema from the server — commands stay in sync with the latest API
-- **L3 helper commands**: `task +run` and `message +chat` combine multiple API calls into single workflows
-- **Agent Skills**: Generates SKILL.md files for AI agent platforms (OpenClaw, Claude Code) so agents can drive AnyGen autonomously
-- **Auto-auth**: Seamless web login flow — prints a URL, waits for authorization, saves the key automatically
-- **Background-friendly output**: Final results are printed as compact `[RESULT]` JSON, fitting within the 400-char tail budget of background exec notifications
+Auto-generates commands from a Discovery Document, with structured JSON output for AI Agent integration.
 
 ## Install
 
@@ -18,205 +12,186 @@ npm install -g @anygen/cli
 
 Requires Node.js >= 18.
 
-## Authentication
-
-```bash
-# Interactive web login
-anygen auth login
-
-# Or set an API key directly
-anygen auth login --api-key sk-xxx
-
-# Or via environment variable
-export ANYGEN_API_KEY=sk-xxx
-
-# Check status
-anygen auth status
-
-# Logout
-anygen auth logout
-```
-
 ## Quick Start
 
 ```bash
-# Create a slide deck and download it
-anygen task +run --operation slide --prompt "Q4 board review deck" --output-dir ./output
+# 1. Authenticate
+anygen auth login
 
-# Create a document
-anygen task +run --operation doc --prompt "Technical design doc for auth system" --export-format docx --output-dir ./output
+# 2. Create a task
+anygen task create --data '{"operation":"slide","prompt":"Q4 board review"}'
 
-# Generate a diagram
-anygen task +run --operation smart_draw --prompt "Microservice architecture diagram" --output-dir ./output
+# 3. Wait for completion
+anygen task get --params '{"task_id":"xxx"}' --wait
 
-# Modify an existing task
-anygen message +chat --task-id <id> --content "Change the title to Overview"
+# 4. Download artifacts
+anygen task +download --task-id xxx
 ```
+
+## Authentication
+
+```bash
+anygen auth login                  # Web login (opens browser)
+anygen auth login --api-key sk-xxx # Direct API key
+export ANYGEN_API_KEY=sk-xxx       # Environment variable
+
+anygen auth status                 # Check current auth
+anygen auth logout                 # Remove stored key
+```
+
+Priority: `--api-key` flag > `ANYGEN_API_KEY` env > config file (`~/.config/anygen/config.json`).
 
 ## Commands
 
-### Helper Commands (L3)
-
-These combine multiple API calls into a single blocking workflow:
-
-| Command | Description |
-|---------|-------------|
-| `anygen task +run` | Create task → poll until done → download output |
-| `anygen message +chat` | Send modification → poll until done |
-
-**task +run flags:**
-
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--operation` | Yes | Operation type (slide, doc, smart_draw, etc.) |
-| `--prompt` | Yes | Task description |
-| `--file-tokens` | — | File tokens from `file upload` (JSON array) |
-| `--export-format` | — | Export format (docx, drawio, excalidraw) |
-| `--output-dir` | — | Download output to local directory |
-| `--timeout` | — | Polling timeout in milliseconds |
-
-**message +chat flags:**
-
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--task-id` | Yes | Task ID to modify |
-| `--content` | Yes | Modification message |
-| `--file-tokens` | — | File tokens from `file upload` (JSON array) |
-| `--timeout` | — | Polling timeout in milliseconds |
-
-### Dynamic Commands
-
-All API resources and methods are auto-registered from the Discovery Document:
+### Dynamic Commands (auto-generated from API)
 
 ```bash
-# Browse resources
-anygen --help
+# Create task (POST → --data)
+anygen task create --data '{"operation":"slide","prompt":"Q4 deck"}'
 
-# Call any API method
-anygen task create --params '{"operation":"slide","prompt":"Q4 deck"}'
+# Get task (URL params → --params)
 anygen task get --params '{"task_id":"xxx"}'
-anygen file upload --file ./data.csv
 
-# Inspect method schema
-anygen schema task.create
+# Send modification (URL params + body → --params + --data)
+anygen task message send --params '{"task_id":"xxx"}' --data '{"content":"change title"}'
+
+# Upload file
+anygen file upload --data '{"file":"./data.csv"}'
+
+# Poll until complete
+anygen task get --params '{"task_id":"xxx"}' --wait
 ```
 
-### Static Commands
-
-| Command | Description |
-|---------|-------------|
-| `anygen auth login` | Authenticate via web login or API key |
-| `anygen auth status` | Show current auth status |
-| `anygen auth logout` | Remove stored API key |
-| `anygen skill install` | Install Agent Skills to a platform |
-| `anygen skill list` | List available skill operations |
-
-## Supported Operations
-
-| Operation | Type | Export | Time |
-|-----------|------|--------|------|
-| `slide` | Slide / PPT | — | 10-15 min |
-| `doc` | Document / DOCX | docx | 10-15 min |
-| `smart_draw` | Diagram (SmartDraw) | drawio | 30-60 sec |
-| `deep_research` | Deep Research Report | — | 10-20 min |
-| `data_analysis` | Data Analysis (CSV) | — | 10-15 min |
-| `finance` | Financial Research | — | 10-15 min |
-| `storybook` | Storybook / Visuals | — | 10-15 min |
-| `website` | Website | — | 10-15 min |
-| `ai_designer` | Image Design | — | 5-10 min |
-
-## Agent Skills
-
-AnyGen CLI can generate SKILL.md files for AI agent platforms. These files teach agents how to use AnyGen — including authentication, requirements gathering, task creation, and modification.
+### Helper Commands
 
 ```bash
-# Install to OpenClaw (default)
-anygen skill install --platform openclaw
+# Download artifacts from a completed task
+anygen task +download --task-id xxx --output-dir ./output
 
-# Install to Claude Code
-anygen skill install --platform claude-code
+# Download thumbnail preview
+anygen task +download --task-id xxx --thumbnail
+```
 
-# Install specific skills only
-anygen skill install --name slide-generator,doc-generator
+### Schema Inspection
 
-# Install to custom directory
-anygen skill install --dir ./my-skills
+```bash
+# JSON output
+anygen schema task.create
+
+# Human-readable with colors, required markers, enum values
+anygen schema task.create --pretty
+
+# Dry run — preview request without sending
+anygen task create --data '{"operation":"slide","prompt":"test"}' --dry-run
+```
+
+### Skill Installation
+
+```bash
+# Interactive — select platforms with arrow keys
+anygen skill install
+
+# Non-interactive — all platforms
+anygen skill install -y
+
+# Specific platform
+anygen skill install --platform claude-code -y
 
 # List available skills
 anygen skill list
 ```
 
-### Generated Skills
+## Options
 
-| Skill | Description |
-|-------|-------------|
-| `anygen` | Main routing skill — matches user requests to operations |
-| `anygen-slide-generator` | Slide / PPT generation |
-| `anygen-doc-generator` | Document / DOCX generation |
-| `anygen-diagram-generator` | Diagram generation (SmartDraw) |
-| `anygen-deep-research` | Deep research reports |
-| `anygen-data-analysis` | CSV data analysis |
-| `anygen-financial-research` | Financial research |
-| `anygen-storybook-generator` | Storybook / creative visuals |
-| `anygen-website-generator` | Website generation |
-| `anygen-image-generator` | Image design |
+| Option | Description |
+|--------|-------------|
+| `--params <json>` | URL/path parameters as JSON |
+| `--data <json>` | Request body as JSON (POST/PUT) |
+| `--dry-run` | Preview request without sending |
+| `--wait` | Poll until terminal state (task.get / message.list) |
+| `--timeout <ms>` | Polling timeout in milliseconds |
+
+## Error Handling
+
+All errors output structured JSON to stdout:
+
+```json
+{
+  "success": false,
+  "error": {
+    "type": "validation",
+    "message": "Missing --data (required fields: operation, prompt)",
+    "hint": "Run: anygen schema task.create"
+  }
+}
+```
+
+Error types: `validation`, `auth`, `permission`, `rate_limit`, `api_error`, `network`, `internal`.
+
+See [docs/error-handling.md](docs/error-handling.md) for details.
 
 ## Architecture
 
 ```
-src/
-├── index.ts              # Entry point, two-phase startup
-├── version.ts            # CLI version constant
-├── api/
-│   ├── client.ts         # HTTP client for API calls
-│   └── auth.ts           # Auth flows (verify, web login, poll)
-├── commands/
-│   ├── auth-cmd.ts       # auth login/status/logout
-│   ├── dynamic.ts        # Discovery-driven command registration
-│   ├── task-run.ts       # L3: task +run
-│   ├── message-modify.ts # L3: message +chat
-│   ├── poll.ts           # Task/message polling utilities
-│   ├── result.ts         # Background-friendly result output
-│   ├── skill-cmd.ts      # skill install/list
-│   └── render-cmd.ts     # Diagram rendering helper
-├── config/
-│   └── config.ts         # Config loading (flag > env > file)
-├── discovery/
-│   ├── client.ts         # Discovery Document fetcher + cache
-│   └── types.ts          # Discovery Document types
-├── render/
-│   └── diagram.ts        # drawio/excalidraw → PNG rendering
-├── security/
-│   ├── sanitize.ts       # Response sanitization
-│   └── validate.ts       # URL/path/filename validation
-└── skills/
-    ├── generator.ts      # SKILL.md file generator
-    └── operations.ts     # Operation definitions (9 types)
+┌──────────────────────────────────────────────────┐
+│                  CLI Entry (commander)            │
+│  auth | schema | skill                           │
+├──────────┬───────────────────────────────────────┤
+│ Dynamic  │         Helpers (+)                    │
+│ Commands │         task +download                 │
+│ (auto)   │         (hand-written)                 │
+├──────────┴───────────────────────────────────────┤
+│               api/client                          │
+│  HTTP client · path params · file upload          │
+├──────────────────────────────────────────────────┤
+│               Infrastructure                      │
+│  Config · Web Auth · Discovery Doc Cache          │
+└──────────────────────────────────────────────────┘
 ```
 
-## Development
+- **Dynamic Commands**: Auto-generated from AnyGen Discovery Document at runtime
+- **Helpers**: Hand-written wrappers for complex operations (download + render)
+- **Skills**: SKILL.md files for AI Agent integration (Claude Code, OpenClaw)
 
-```bash
-# Install dependencies
-npm install
+## Project Structure
 
-# Run in dev mode
-npm run dev -- task +run --operation slide --prompt "test"
-
-# Type check
-npm run typecheck
-
-# Lint
-npm run lint
-
-# Run tests
-npm test
-
-# Build
-npm run build
-
-# Regenerate skill files
-npx tsx src/index.ts skill generate --output skills
+```
+├── src/
+│   ├── index.ts              # Entry point, two-phase startup
+│   ├── version.ts            # CLI version (single source of truth)
+│   ├── errors.ts             # Error types, classification, JSON output
+│   ├── api/
+│   │   ├── client.ts         # HTTP client (callApi)
+│   │   └── auth.ts           # Auth flow (web login, key verification)
+│   ├── commands/
+│   │   ├── auth-cmd.ts       # auth login/status/logout
+│   │   ├── dynamic.ts        # Dynamic command registration from Discovery Document
+│   │   ├── execute.ts        # Command execution engine (auth → validate → call → output)
+│   │   ├── schema-cmd.ts     # schema command (JSON + --pretty output)
+│   │   ├── task-download.ts  # Helper: task +download
+│   │   ├── poll.ts           # Polling utilities (--wait)
+│   │   └── skill-cmd.ts      # skill install/list
+│   ├── config/
+│   │   ├── config.ts         # Config loading (flag > env > file)
+│   │   └── internal-fields.ts # Fields hidden from user output
+│   ├── discovery/
+│   │   ├── client.ts         # Discovery Document fetch + cache
+│   │   └── types.ts          # Discovery Document types
+│   ├── render/
+│   │   └── diagram.ts        # drawio/excalidraw → PNG rendering
+│   ├── security/
+│   │   └── validate.ts       # URL/path/filename security checks
+│   ├── skills/
+│   │   └── generator.ts      # SKILL.md generator
+│   └── utils/
+│       ├── download.ts       # File download with security validation
+│       └── prompt.ts         # Interactive prompts (select, multi-select, confirm)
+├── skills/                   # Generated skill files (shipped with npm)
+├── docs/
+│   ├── design-spec.md        # Design spec and architecture
+│   ├── error-handling.md     # Error handling architecture
+│   └── testcase.md           # Test case documentation
+└── package.json
 ```
 
 ## Environment Variables
@@ -224,6 +199,18 @@ npx tsx src/index.ts skill generate --output skills
 | Variable | Description |
 |----------|-------------|
 | `ANYGEN_API_KEY` | API key for authentication |
+
+## Development
+
+```bash
+npm install          # Install dependencies
+npm run build        # Compile TypeScript
+npm test             # Run tests
+npx tsc --noEmit     # Type check only
+
+# Dev mode (no compile needed)
+npx tsx src/index.ts task create --help
+```
 
 ## License
 

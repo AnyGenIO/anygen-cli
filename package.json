@@ -1,11 +1,19 @@
 {
-  "name": "@anygen/cli",
+  "name": "anygen-cli",
   "version": "0.1.0",
   "description": "AnyGen CLI - AI content generation platform CLI tool",
   "type": "module",
   "bin": {
     "anygen": "./bin/anygen.js"
   },
+  "files": [
+    "bin/",
+    "dist/",
+    "!dist/__tests__/",
+    "skills/",
+    "README.md",
+    "README.zh-CN.md"
+  ],
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",

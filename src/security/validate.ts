@@ -15,8 +15,7 @@ import * as path from 'path';
 
 /**
  * Validate an output directory path.
- * Rejects absolute paths, traversal sequences, and control characters.
- * Intended for --output-dir flags where AI agents might pass adversarial paths.
+ * Rejects empty paths and control characters. Accepts both relative and absolute paths.
  */
 export function validateSafeOutputDir(dir: string): string {
   if (!dir || dir.trim().length === 0) {
@@ -28,22 +27,8 @@ export function validateSafeOutputDir(dir: string): string {
     throw new ValidationError('Output directory contains control characters');
   }
 
-  // Reject absolute paths — force relative to CWD
-  if (path.isAbsolute(dir)) {
-    throw new ValidationError(
-      `Output directory must be a relative path, got absolute: "${dir}". ` +
-      'Use a relative path like "./output" or "results/"',
-    );
-  }
-
-  // Reject path traversal sequences
-  const normalized = path.normalize(dir);
-  if (normalized.startsWith('..') || normalized.includes(`${path.sep}..`)) {
-    throw new ValidationError(
-      `Output directory contains path traversal: "${dir}". ` +
-      'Use a path within the current directory',
-    );
-  }
+  // Normalize and resolve to absolute path
+  const normalized = path.resolve(dir);
 
   return normalized;
 }
@@ -144,14 +129,20 @@ export function validateDownloadUrl(url: string): string {
 
   // Block localhost / private IPs (SSRF prevention)
   const host = parsed.hostname.toLowerCase();
+  // Strip IPv6 brackets if present
+  const bareHost = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
   if (
-    host === 'localhost' ||
-    host === '127.0.0.1' ||
-    host === '::1' ||
-    host === '0.0.0.0' ||
-    host.startsWith('10.') ||
-    host.startsWith('192.168.') ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    bareHost === 'localhost' ||
+    bareHost === '127.0.0.1' ||
+    bareHost === '::1' ||
+    bareHost === '0.0.0.0' ||
+    bareHost.startsWith('10.') ||
+    bareHost.startsWith('192.168.') ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(bareHost) ||
+    bareHost.startsWith('169.254.') ||              // Link-local IPv4
+    bareHost.startsWith('fe80:') ||                 // Link-local IPv6
+    bareHost.startsWith('fc00:') ||                 // IPv6 unique local (fc00::/7)
+    bareHost.startsWith('fd00:') ||                 // IPv6 unique local (fd00::/8)
     host.endsWith('.local') ||
     host.endsWith('.internal')
   ) {

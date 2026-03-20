@@ -1,10 +1,8 @@
 /**
  * HTTP client for AnyGen OpenAPI
  *
- * Request behavior aligned with Python SDK (anygen.py):
- * - POST: auth_token in body + Authorization header
- * - GET:  Authorization header only
- * - No redirect following (allow_redirects=False)
+ * Authentication via Authorization header for all methods.
+ * No redirect following (allow_redirects=False).
  *
  * Supports both JSON and multipart/form-data (for file uploads).
  * When `files` is provided, automatically switches to multipart mode.
@@ -45,16 +43,16 @@ export async function callApi(opts: ApiRequestOptions): Promise<ApiResponse> {
   const bodyParams: Record<string, unknown> = {};
 
   if (method.parameters) {
-    for (const param of method.parameters) {
-      const value = params?.[param.name];
+    for (const [paramName, param] of Object.entries(method.parameters)) {
+      const value = params?.[paramName];
 
       if (param.location === 'path' && value != null) {
-        const pathValue = validateResourceName(String(value), param.name);
-        url = url.replace(`:${param.name}`, encodeURIComponent(pathValue));
+        const pathValue = validateResourceName(String(value), paramName);
+        url = url.replace(`:${paramName}`, encodeURIComponent(pathValue));
       } else if (param.location === 'query' && value != null) {
-        queryParts.push(`${encodeURIComponent(param.name)}=${encodeURIComponent(String(value))}`);
+        queryParts.push(`${encodeURIComponent(paramName)}=${encodeURIComponent(String(value))}`);
       } else if (param.location === 'body' && value != null) {
-        bodyParams[param.name] = value;
+        bodyParams[paramName] = value;
       }
     }
   }
@@ -100,16 +98,12 @@ export async function callApi(opts: ApiRequestOptions): Promise<ApiResponse> {
         }
       }
 
-      formData.append('auth_token', authToken);
       fetchOpts.body = formData;
       // Do NOT set Content-Type — fetch auto-sets it with multipart boundary
     } else {
       // JSON mode
       headers['Content-Type'] = 'application/json';
       const finalBody = { ...bodyParams, ...body };
-      if (apiKey && !finalBody.auth_token) {
-        finalBody.auth_token = authToken;
-      }
       if (Object.keys(finalBody).length > 0) {
         fetchOpts.body = JSON.stringify(finalBody);
       }

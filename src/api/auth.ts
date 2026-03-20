@@ -9,12 +9,12 @@
  * the web login flow (print URL → poll → save key → continue).
  */
 
-import { loadConfig, saveApiKey, type ApiKeySource } from '../config/config.js';
+import { saveApiKey, saveFetchToken, clearFetchToken, getStoredApiKey, type ApiKeySource } from '../config/config.js';
+import type { AnygenConfig } from '../config/config.js';
+import { authError, networkError } from '../errors.js';
 
 const AUTH_POLL_INTERVAL_MS = 10_000; // 10 seconds
 const AUTH_MAX_WAIT_MS = 900_000;     // 15 minutes
-
-const BASE_URL = 'https://www.anygen.io';
 
 // ---- Types ----
 
@@ -31,7 +31,9 @@ export interface VerifyResult {
 /**
  * Call /v1/openapi/key/verify to validate key and credits.
  */
-export async function verifyKey(apiKey?: string): Promise<VerifyResult | null> {
+export type VerifyError = { error: 'network' } | { error: 'server'; status: number };
+
+export async function verifyKey(baseUrl: string, apiKey?: string): Promise<VerifyResult | VerifyError> {
   const headers: Record<string, string> = {
     'Accept': 'application/json',
   };
@@ -40,24 +42,30 @@ export async function verifyKey(apiKey?: string): Promise<VerifyResult | null> {
   }
 
   try {
-    const resp = await fetch(`${BASE_URL}/v1/openapi/key/verify`, {
+    const resp = await fetch(`${baseUrl}/v1/openapi/key/verify`, {
       method: 'GET',
       headers,
       redirect: 'manual',
     });
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      return { error: 'server', status: resp.status };
+    }
     return await resp.json() as VerifyResult;
   } catch {
-    return null;
+    return { error: 'network' };
   }
+}
+
+export function isVerifyError(result: VerifyResult | VerifyError): result is VerifyError {
+  return 'error' in result && (result.error === 'network' || result.error === 'server');
 }
 
 /**
  * Call /v1/openapi/key/get to fetch allocated key after web login.
  */
-export async function getKey(fetchToken: string): Promise<{ allocated: boolean; api_key?: string; error?: string } | null> {
+export async function getKey(baseUrl: string, fetchToken: string): Promise<{ allocated: boolean; api_key?: string; error?: string } | null> {
   try {
-    const resp = await fetch(`${BASE_URL}/v1/openapi/key/get?fetch_token=${encodeURIComponent(fetchToken)}`, {
+    const resp = await fetch(`${baseUrl}/v1/openapi/key/get?fetch_token=${encodeURIComponent(fetchToken)}`, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
       redirect: 'manual',
@@ -84,7 +92,7 @@ export interface AuthResult {
   source: ApiKeySource;
 }
 
-const SOURCE_LABELS: Record<ApiKeySource, string> = {
+export const SOURCE_LABELS: Record<ApiKeySource, string> = {
   flag: '--api-key flag',
   env: 'ANYGEN_API_KEY env',
   config: '~/.config/anygen/config.json',
@@ -94,49 +102,68 @@ const SOURCE_LABELS: Record<ApiKeySource, string> = {
 /**
  * Ensure a valid API key is available before executing an API command.
  *
- * Full automatic flow:
- * 1. Load key from config (flag > env > file)
- * 2. Verify with server
- * 3. If valid + credits > 0 → return key + source
- * 4. If invalid / missing → print auth URL, poll for key, save, return key
- * 5. If credits exhausted → print error, return null
- * 6. If network error / timeout → print error, return null
+ * Accepts an already-loaded config object (no duplicate loadConfig calls).
+ *
+ * Flow:
+ * 1. Has apiKey → verify with server → return if valid
+ * 2. Has fetchToken (from prior --no-wait or interrupted login) → try getKey to exchange for apiKey
+ * 3. Neither → start login flow (verify → get auth_url/fetchToken → save fetchToken → poll)
  */
-export async function ensureAuth(apiKeyOverride?: string): Promise<AuthResult | null> {
-  const config = await loadConfig({ apiKey: apiKeyOverride });
+export async function ensureAuth(config: AnygenConfig): Promise<AuthResult | null> {
   const currentKey = config.apiKey || undefined;
   const source = config.apiKeySource;
 
-  const result = await verifyKey(currentKey);
-  if (!result) {
-    console.error('[ERROR] Failed to verify API key. Check your network connection.');
-    return null;
-  }
-
-  // Key is valid
-  if (result.verified) {
-    const credits = parseCredits(result.credits);
-    if (credits <= 0) {
-      console.error('[ERROR] API key is valid but has no credits remaining.');
-      return null;
+  // Path 1: Have an API key — verify it
+  if (currentKey) {
+    const result = await verifyKey(config.baseUrl, currentKey);
+    if (isVerifyError(result)) {
+      if (result.error === 'server') {
+        throw networkError(`Service unavailable (HTTP ${result.status})`);
+      } else {
+        throw networkError('Failed to connect to AnyGen.');
+      }
     }
-    if (!currentKey) {
-      // Server verified (e.g. by IP) but we don't have the key locally
-      // Fall through to login flow
-    } else {
+
+    if (result.verified) {
+      const credits = parseCredits(result.credits);
+      if (credits <= 0) {
+        throw authError('API key is valid but has no credits remaining.');
+      }
       return { apiKey: currentKey, source };
     }
+
+    // Key is invalid — clear and fall through to login flow
+    throw authError(`API key from ${SOURCE_LABELS[source]} is invalid.`);
   }
 
-  // Not verified or no local key — enter login flow
-  if (!result.auth_url || !result.fetch_token) {
-    if (currentKey) {
-      console.error(`[ERROR] API key from ${SOURCE_LABELS[source]} is invalid. Run \`anygen auth\` to re-authenticate.`);
-    } else {
-      console.error('[ERROR] API key is not configured. Run `anygen auth login` to authenticate.');
+  // Path 2: Have a fetchToken — try to exchange for API key
+  if (config.fetchToken) {
+    const result = await getKey(config.baseUrl, config.fetchToken);
+    if (result?.allocated && result.api_key) {
+      await saveApiKey(result.api_key);
+      console.error('[AUTH] API key configured successfully.');
+      return { apiKey: result.api_key, source: 'config' };
     }
-    return null;
+    // fetchToken not yet allocated or expired — clear and start fresh login
+    await clearFetchToken();
   }
+
+  // Path 3: No key, no fetchToken — start login flow
+  const result = await verifyKey(config.baseUrl);
+  if (isVerifyError(result)) {
+    if (result.error === 'server') {
+      throw networkError(`Service unavailable (HTTP ${result.status})`);
+    } else {
+      throw networkError('Failed to connect to AnyGen.');
+    }
+  }
+
+  if (!result.auth_url || !result.fetch_token) {
+    throw authError('API key is not configured.');
+  }
+
+  // Save fetchToken before polling so it survives interruption
+  await saveFetchToken(result.fetch_token);
 
   console.error(`[AUTH] Open this URL to authorize:`);
   console.error(`[AUTH] ${result.auth_url}`);
@@ -145,14 +172,12 @@ export async function ensureAuth(apiKeyOverride?: string): Promise<AuthResult | 
   }
   console.error('[AUTH] Waiting for authorization...');
 
-  const key = await waitForKey(result.fetch_token);
+  const key = await waitForKey(config.baseUrl, result.fetch_token);
   if (!key) {
-    console.error('[ERROR] Authorization failed or timed out.');
-    console.error('[ERROR] You can also run: anygen auth login --api-key sk-xxx');
-    return null;
+    throw authError('Authorization failed or timed out.', 'Run: anygen auth login --api-key sk-xxx');
   }
 
-  return { apiKey: key, source: 'config' }; // waitForKey saves to config file
+  return { apiKey: key, source: 'config' };
 }
 
 /**
@@ -161,6 +186,7 @@ export async function ensureAuth(apiKeyOverride?: string): Promise<AuthResult | 
  * On success, saves the key and returns it.
  */
 export async function waitForKey(
+  baseUrl: string,
   fetchToken: string,
   timeoutMs: number = AUTH_MAX_WAIT_MS,
   intervalMs: number = AUTH_POLL_INTERVAL_MS,
@@ -176,18 +202,18 @@ export async function waitForKey(
     }
 
     // Check if user manually configured a key in config file
-    const config = await loadConfig();
-    if (config.apiKey && config.apiKey !== lastCheckedKey) {
-      lastCheckedKey = config.apiKey;
-      const verifyResult = await verifyKey(config.apiKey);
-      if (verifyResult?.verified && parseCredits(verifyResult.credits) > 0) {
+    const storedKey = await getStoredApiKey();
+    if (storedKey && storedKey !== lastCheckedKey) {
+      lastCheckedKey = storedKey;
+      const verifyResult = await verifyKey(baseUrl, storedKey);
+      if (!isVerifyError(verifyResult) && verifyResult.verified && parseCredits(verifyResult.credits) > 0) {
         console.error('[AUTH] API key configured successfully.');
-        return config.apiKey;
+        return storedKey;
       }
     }
 
     // Poll server for key allocation via web login
-    const result = await getKey(fetchToken);
+    const result = await getKey(baseUrl, fetchToken);
     if (result?.allocated && result.api_key) {
       await saveApiKey(result.api_key);
       console.error('[AUTH] API key configured successfully.');

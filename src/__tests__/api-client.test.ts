@@ -48,15 +48,14 @@ describe('callApi', () => {
     const method = makeMethod({
       httpMethod: 'GET',
       path: '/v1/openapi/tasks/:task_id',
-      parameters: [
-        {
-          name: 'task_id',
+      parameters: {
+        task_id: {
           location: 'path',
           type: 'string',
           required: true,
           description: 'Task ID',
         },
-      ],
+      },
     });
 
     await callApi({
@@ -81,22 +80,20 @@ describe('callApi', () => {
     const method = makeMethod({
       httpMethod: 'GET',
       path: '/v1/openapi/tasks/:task_id/messages',
-      parameters: [
-        {
-          name: 'task_id',
+      parameters: {
+        task_id: {
           location: 'path',
           type: 'string',
           required: true,
           description: 'Task ID',
         },
-        {
-          name: 'limit',
+        limit: {
           location: 'query',
           type: 'number',
           required: false,
           description: 'Limit',
         },
-      ],
+      },
     });
 
     await callApi({
@@ -127,7 +124,7 @@ describe('callApi', () => {
     expect(fetchOpts.body).toBeUndefined();
   });
 
-  it('should inject auth_token in POST body', async () => {
+  it('should send auth via Authorization header, not body', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       text: async () => '{"success":true}',
@@ -141,28 +138,11 @@ describe('callApi', () => {
     });
 
     const fetchOpts = mockFetch.mock.calls[0][1];
+    expect(fetchOpts.headers['Authorization']).toBe('Bearer sk-test');
     const body = JSON.parse(fetchOpts.body);
-    expect(body.auth_token).toBe('Bearer sk-test');
+    expect(body.auth_token).toBeUndefined();
     expect(body.operation).toBe('slide');
     expect(body.prompt).toBe('hello');
-  });
-
-  it('should not override existing auth_token in body', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      text: async () => '{"success":true}',
-    });
-
-    await callApi({
-      baseUrl: 'https://api.example.com',
-      apiKey: 'sk-test',
-      method: makeMethod(),
-      body: { auth_token: 'Bearer custom-token' },
-    });
-
-    const fetchOpts = mockFetch.mock.calls[0][1];
-    const body = JSON.parse(fetchOpts.body);
-    expect(body.auth_token).toBe('Bearer custom-token');
   });
 
   it('should handle Bearer prefix correctly', async () => {
@@ -243,15 +223,14 @@ describe('callApi', () => {
     const method = makeMethod({
       httpMethod: 'GET',
       path: '/v1/tasks/:task_id',
-      parameters: [
-        {
-          name: 'task_id',
+      parameters: {
+        task_id: {
           location: 'path',
           type: 'string',
           required: true,
           description: '',
         },
-      ],
+      },
     });
 
     // Valid task_id with special but allowed characters (underscores, hyphens)
@@ -270,15 +249,14 @@ describe('callApi', () => {
     const method = makeMethod({
       httpMethod: 'GET',
       path: '/v1/tasks/:task_id',
-      parameters: [
-        {
-          name: 'task_id',
+      parameters: {
+        task_id: {
           location: 'path',
           type: 'string',
           required: true,
           description: '',
         },
-      ],
+      },
     });
 
     // Path traversal

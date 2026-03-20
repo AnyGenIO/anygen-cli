@@ -27,25 +27,18 @@ describe('config', () => {
       expect(result.baseUrl).toBe('https://www.anygen.io');
     });
 
-    it('should prefer config file over env var', async () => {
+    it('should prefer env var over config file', async () => {
       const originalKey = process.env.ANYGEN_API_KEY;
       process.env.ANYGEN_API_KEY = 'env-key';
 
       try {
-        const { loadConfig, getStoredApiKey } = await import('../config/config.js');
-        const storedKey = await getStoredApiKey();
+        const { loadConfig } = await import('../config/config.js');
 
         const result = await loadConfig();
 
-        if (storedKey) {
-          // Config file has a key — it should win over env
-          expect(result.apiKey).toBe(storedKey);
-          expect(result.apiKeySource).toBe('config');
-        } else {
-          // No config file key — env should be used
-          expect(result.apiKey).toBe('env-key');
-          expect(result.apiKeySource).toBe('env');
-        }
+        // Env should always win over config file (flag > env > file)
+        expect(result.apiKey).toBe('env-key');
+        expect(result.apiKeySource).toBe('env');
       } finally {
         if (originalKey !== undefined) {
           process.env.ANYGEN_API_KEY = originalKey;

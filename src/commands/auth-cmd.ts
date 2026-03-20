@@ -3,33 +3,29 @@
  *
  * anygen auth login                  — web login or verify existing key
  * anygen auth login --api-key sk-xxx — configure and verify a specific key
+ * anygen auth login --no-wait        — get auth URL and exit without polling
  * anygen auth status                 — show current auth status
  * anygen auth logout                 — remove stored key
- * anygen auth wait --fetch-token     — poll for key allocation (used by AI agents)
  */
 
 import { Command } from 'commander';
-import { loadConfig, saveApiKey, removeApiKey } from '../config/config.js';
-import { verifyKey, waitForKey, maskKey } from '../api/auth.js';
-
-const SOURCE_LABELS: Record<string, string> = {
-  flag: '--api-key flag',
-  env: 'ANYGEN_API_KEY env',
-  config: '~/.config/anygen/config.json',
-  none: '',
-};
+import { loadConfig, saveApiKey, saveFetchToken, removeApiKey } from '../config/config.js';
+import { verifyKey, getKey, waitForKey, maskKey, isVerifyError, SOURCE_LABELS } from '../api/auth.js';
+import { authError, networkError, apiError, outputError } from '../errors.js';
 
 export function buildAuthCommand(program: Command): void {
   const authCmd = program
     .command('auth')
-    .description('Authenticate with AnyGen');
+    .description('Authenticate with AnyGen')
+    .helpCommand(false);
 
   authCmd
     .command('login')
     .description('Authenticate via web login or API key')
     .option('--api-key <key>', 'Configure and verify a specific API key')
-    .action(async (opts: { apiKey?: string }) => {
-      await handleLogin(opts.apiKey);
+    .option('--no-wait', 'Get auth URL and exit without waiting for authorization')
+    .action(async (opts: { apiKey?: string; noWait?: boolean }) => {
+      await handleLogin(opts.apiKey, opts.noWait);
     });
 
   authCmd
@@ -45,37 +41,39 @@ export function buildAuthCommand(program: Command): void {
     .action(async () => {
       await handleLogout();
     });
-
-  authCmd
-    .command('wait')
-    .description('Poll for API key allocation (used by AI agents)')
-    .requiredOption('--fetch-token <token>', 'Fetch token from verify response')
-    .option('--timeout <seconds>', 'Max wait time in seconds', '900')
-    .option('--interval <seconds>', 'Polling interval in seconds', '10')
-    .action(async (opts: { fetchToken: string; timeout: string; interval: string }) => {
-      const timeoutMs = parseInt(opts.timeout, 10) * 1000;
-      const intervalMs = parseInt(opts.interval, 10) * 1000;
-      const key = await waitForKey(opts.fetchToken, timeoutMs, intervalMs);
-      process.exit(key ? 0 : 1);
-    });
 }
 
-async function handleLogin(apiKeyOverride?: string): Promise<void> {
+async function handleLogin(apiKeyOverride?: string, noWait?: boolean): Promise<void> {
   const config = await loadConfig({ apiKey: apiKeyOverride });
   const currentKey = config.apiKey || undefined;
 
-  const result = await verifyKey(currentKey);
-  if (!result) {
-    console.error('Error: Failed to connect to AnyGen. Check your network connection.');
-    process.exit(1);
+  // If we have a pending fetchToken, try to exchange it first
+  if (!currentKey && config.fetchToken) {
+    const fetchResult = await getKey(config.baseUrl, config.fetchToken);
+    if (fetchResult?.allocated && fetchResult.api_key) {
+      await saveApiKey(fetchResult.api_key);
+      process.stderr.write('Authenticated successfully.\n');
+      process.stderr.write(`  API Key:  ${maskKey(fetchResult.api_key)}\n`);
+      process.stderr.write(`  Source:   ${SOURCE_LABELS['config']}\n`);
+      return;
+    }
+    // fetchToken not ready or expired — continue to normal flow
+  }
+
+  const result = await verifyKey(config.baseUrl, currentKey);
+  if (isVerifyError(result)) {
+    if (result.error === 'server') {
+      outputError(apiError(`Service unavailable (HTTP ${result.status}). Please try again later.`));
+    } else {
+      outputError(networkError('Failed to connect to AnyGen.'));
+    }
   }
 
   // Key is valid
   if (result.verified) {
     const credits = parseInt(String(result.credits ?? '0'), 10) || 0;
     if (credits <= 0) {
-      console.error('Error: API key is valid but has no credits remaining.');
-      process.exit(1);
+      outputError(authError('API key is valid but has no credits remaining.'));
     }
 
     if (apiKeyOverride) {
@@ -83,71 +81,92 @@ async function handleLogin(apiKeyOverride?: string): Promise<void> {
     }
 
     const displayKey = currentKey ? maskKey(currentKey) : '(from server)';
-    console.log(`Authenticated successfully.`);
-    console.log(`  API Key:  ${displayKey}`);
-    console.log(`  Source:   ${SOURCE_LABELS[config.apiKeySource]}`);
-    console.log(`  Credits:  ${credits}`);
+    process.stderr.write(`Authenticated successfully.\n`);
+    process.stderr.write(`  API Key:  ${displayKey}\n`);
+    process.stderr.write(`  Source:   ${SOURCE_LABELS[config.apiKeySource]}\n`);
+    process.stderr.write(`  Credits:  ${credits}\n`);
+
+    if (process.env.ANYGEN_API_KEY && config.apiKeySource !== 'env') {
+      process.stderr.write('\nNote: ANYGEN_API_KEY environment variable is set and will take priority over the saved key.\n');
+    }
     return;
   }
 
   // Not valid — enter login flow
   if (!result.auth_url || !result.fetch_token) {
-    console.error('Error: API key is invalid. Please provide a valid key with --api-key.');
-    process.exit(1);
+    outputError(authError('API key is invalid.', 'Run: anygen auth login --api-key sk-xxx'));
   }
 
-  console.log('No valid API key found. Opening web login...\n');
-  console.log(`  Open this URL to authorize:`);
-  console.log(`  ${result.auth_url}\n`);
+  // Persist fetchToken before printing URL — survives interruption
+  await saveFetchToken(result.fetch_token);
+
+  process.stderr.write('No valid API key found. Opening web login...\n\n');
+  process.stderr.write(`  Open this URL to authorize:\n`);
+  process.stderr.write(`  ${result.auth_url}\n\n`);
   if (result.api_key_name) {
-    console.log(`  This will create an API key named: ${result.api_key_name}`);
+    process.stderr.write(`  This will create an API key named: ${result.api_key_name}\n`);
   }
-  console.log('\nWaiting for authorization...');
 
-  const key = await waitForKey(result.fetch_token);
+  // --no-wait: output auth info and exit without polling
+  if (noWait) {
+    console.log(JSON.stringify({
+      auth_url: result.auth_url,
+      fetch_token: result.fetch_token,
+    }, null, 2));
+    return;
+  }
+
+  process.stderr.write('Waiting for authorization...\n');
+
+  const key = await waitForKey(config.baseUrl, result.fetch_token);
   if (!key) {
-    console.error('\nAuthorization failed or timed out.');
-    console.error('You can also configure a key directly: anygen auth login --api-key sk-xxx');
-    process.exit(1);
+    outputError(authError('Authorization failed or timed out.', 'Run: anygen auth login --api-key sk-xxx'));
   }
 
-  console.log('\nYou can now use AnyGen CLI.');
+  process.stderr.write('\nYou can now use AnyGen CLI.\n');
+
+  if (process.env.ANYGEN_API_KEY) {
+    process.stderr.write('\nNote: ANYGEN_API_KEY environment variable is set and will take priority over the saved key.\n');
+  }
 }
 
 async function handleStatus(): Promise<void> {
   const config = await loadConfig();
 
   if (!config.apiKey) {
-    console.log('Not authenticated.');
-    console.log('Run `anygen auth login` to authenticate.');
+    process.stderr.write('Not authenticated.\n');
+    process.stderr.write('Run `anygen auth login` to authenticate.\n');
     return;
   }
 
-  console.log(`API Key:  ${maskKey(config.apiKey)}`);
-  console.log(`Source:   ${SOURCE_LABELS[config.apiKeySource]}`);
+  process.stderr.write(`API Key:  ${maskKey(config.apiKey)}\n`);
+  process.stderr.write(`Source:   ${SOURCE_LABELS[config.apiKeySource]}\n`);
 
-  const result = await verifyKey(config.apiKey);
-  if (!result) {
-    console.log('Status:   Unable to verify (network error)');
+  const result = await verifyKey(config.baseUrl, config.apiKey);
+  if (isVerifyError(result)) {
+    if (result.error === 'server') {
+      process.stderr.write(`Status:   Unable to verify (service unavailable, HTTP ${result.status})\n`);
+    } else {
+      process.stderr.write('Status:   Unable to verify (network error)\n');
+    }
     return;
   }
 
   if (result.verified) {
     const credits = parseInt(String(result.credits ?? '0'), 10) || 0;
-    console.log(`Status:   Valid`);
-    console.log(`Credits:  ${credits}`);
+    process.stderr.write(`Status:   Valid\n`);
+    process.stderr.write(`Credits:  ${credits}\n`);
   } else {
-    console.log('Status:   Invalid');
-    console.log('Run `anygen auth login` to re-authenticate.');
+    process.stderr.write('Status:   Invalid\n');
+    process.stderr.write('Run `anygen auth login` to re-authenticate.\n');
   }
 }
 
 async function handleLogout(): Promise<void> {
   await removeApiKey();
-  console.log('API key removed from ~/.config/anygen/config.json');
+  process.stderr.write('API key removed from ~/.config/anygen/config.json\n');
 
   if (process.env.ANYGEN_API_KEY) {
-    console.log('');
-    console.log('Note: ANYGEN_API_KEY environment variable is still set, commands will continue to use it.');
+    process.stderr.write('\nNote: ANYGEN_API_KEY environment variable is still set, commands will continue to use it.\n');
   }
 }

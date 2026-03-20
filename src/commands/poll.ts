@@ -1,37 +1,39 @@
 /**
- * Polling and download utilities for --wait / --output-dir flags
+ * Polling utilities for --wait flag
  */
 
-import * as fs from 'fs/promises';
-import * as path from 'path';
 import { callApi } from '../api/client.js';
 import type { AnygenConfig } from '../config/config.js';
 import type { Method } from '../discovery/types.js';
-import { validateDownloadUrl, sanitizeFileName, validateSafeOutputDir } from '../security/validate.js';
+import { apiError, outputError } from '../errors.js';
+
+/**
+ * Fallback set for methods that support --wait polling.
+ * Used when Discovery Document does not yet declare supportsPolling.
+ * Once the server adds the field, this fallback is bypassed via nullish coalescing.
+ */
+const POLLABLE_METHOD_IDS = new Set(['task.get', 'task.message.list']);
+
+/** Check whether a method supports --wait polling. */
+export function methodSupportsPolling(method: Method): boolean {
+  return method.supportsPolling ?? POLLABLE_METHOD_IDS.has(method.id);
+}
 
 const POLL_INTERVAL_MS = 3000;
 const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000; // 20 min
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
-export interface TaskPollResult {
-  taskId: string;
-  output: Record<string, unknown>;
-  downloadedFile: string | null;
-}
-
 /**
  * Poll task.get until status is completed or failed.
- * Optionally downloads the output file.
- * Returns structured result for the caller to format.
+ * Outputs the final task JSON to stdout.
  */
 export async function pollTask(
   config: AnygenConfig,
   taskGetMethod: Method,
   taskId: string,
-  outputDir?: string,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
-): Promise<TaskPollResult> {
-  console.log(`[INFO] Polling task: ${taskId}`);
+): Promise<void> {
+  process.stderr.write(`  Polling task ${taskId}...\n`);
   const startTime = Date.now();
   let lastProgress = -1;
   let lastHeartbeat = startTime;
@@ -39,16 +41,29 @@ export async function pollTask(
   while (true) {
     const elapsed = Date.now() - startTime;
     if (elapsed > timeoutMs) {
-      console.error(`[ERROR] Polling timeout (${timeoutMs / 1000}s)`);
-      process.exit(1);
+      outputError(apiError(`Polling timeout after ${timeoutMs / 1000}s`));
     }
 
-    const result = await callApi({
-      baseUrl: config.baseUrl,
-      apiKey: config.apiKey,
-      method: taskGetMethod,
-      params: { task_id: taskId },
-    });
+    let result;
+    try {
+      result = await callApi({
+        baseUrl: config.baseUrl,
+        apiKey: config.apiKey,
+        method: taskGetMethod,
+        params: { task_id: taskId },
+      });
+    } catch {
+      process.stderr.write(`  Network error, retrying...\n`);
+      await sleep(POLL_INTERVAL_MS);
+      continue;
+    }
+
+    // Retry on server errors (5xx)
+    if (result.statusCode >= 500) {
+      process.stderr.write(`  Server error (HTTP ${result.statusCode}), retrying...\n`);
+      await sleep(POLL_INTERVAL_MS);
+      continue;
+    }
 
     const data = result.data as Record<string, unknown>;
     if (!data) {
@@ -60,7 +75,7 @@ export async function pollTask(
     const progress = (data.progress as number) ?? 0;
 
     if (progress !== lastProgress) {
-      console.log(`[PROGRESS] Status: ${status}, Progress: ${progress}%`);
+      process.stderr.write(`  ${status} ${progress}%\n`);
       lastProgress = progress;
     }
 
@@ -69,25 +84,18 @@ export async function pollTask(
       const mins = Math.floor(elapsed / 60000);
       const secs = Math.floor((elapsed % 60000) / 1000);
       const ts = new Date().toLocaleTimeString('en-US', { hour12: false });
-      console.log(`[HEARTBEAT] ${ts} | elapsed ${mins}m${String(secs).padStart(2, '0')}s | status: ${status} | progress: ${progress}%`);
+      process.stderr.write(`  ${ts} elapsed ${mins}m${String(secs).padStart(2, '0')}s | ${status} ${progress}%\n`);
       lastHeartbeat = now;
     }
 
     if (status === 'completed') {
-      const output = (data.output ?? {}) as Record<string, unknown>;
-      console.log(`[SUCCESS] Task completed`);
-
-      let downloadedFile: string | null = null;
-      if (outputDir && output.file_url) {
-        downloadedFile = await downloadToLocal(output.file_url as string, output.file_name as string, outputDir);
-      }
-
-      return { taskId, output, downloadedFile };
+      process.stderr.write(`  \x1b[32m✓\x1b[0m Task completed\n`);
+      console.log(JSON.stringify(data, null, 2));
+      return;
     }
 
     if (status === 'failed') {
-      console.error(`[ERROR] Task failed: ${data.error || 'Unknown error'}`);
-      process.exit(1);
+      outputError(apiError(`Task failed: ${data.error || 'Unknown error'}`));
     }
 
     await sleep(POLL_INTERVAL_MS);
@@ -112,87 +120,39 @@ export async function pollMessages(
 
   while (true) {
     if (Date.now() - startTime > timeoutMs) {
-      console.error('[ERROR] Wait timeout');
-      process.exit(1);
+      outputError(apiError(`Message polling timeout after ${timeoutMs / 1000}s`));
     }
 
-    const result = await callApi({
-      baseUrl: config.baseUrl,
-      apiKey: config.apiKey,
-      method: messageListMethod,
-      params,
-    });
+    let result;
+    try {
+      result = await callApi({
+        baseUrl: config.baseUrl,
+        apiKey: config.apiKey,
+        method: messageListMethod,
+        params,
+      });
+    } catch {
+      process.stderr.write(`  Network error, retrying...\n`);
+      await sleep(POLL_INTERVAL_MS);
+      continue;
+    }
+
+    if (result.statusCode >= 500) {
+      process.stderr.write(`  Server error (HTTP ${result.statusCode}), retrying...\n`);
+      await sleep(POLL_INTERVAL_MS);
+      continue;
+    }
 
     const data = result.data as Record<string, unknown>;
     const messages = (data?.messages ?? data?.data ?? []) as Array<Record<string, unknown>>;
     const hasRunning = messages.some((m) => m.status === 'running');
 
     if (!hasRunning && messages.length > 0) {
-      console.log(`[SUCCESS] Modification completed`);
+      process.stderr.write(`  \x1b[32m✓\x1b[0m Modification completed\n`);
       return { data };
     }
 
     await sleep(POLL_INTERVAL_MS);
-  }
-}
-
-/**
- * Download a file from URL to local directory.
- */
-export async function downloadToLocal(
-  fileUrl: string,
-  fileName: string | undefined,
-  outputDir: string,
-): Promise<string | null> {
-  console.log('[INFO] Downloading file...');
-
-  try {
-    // Validate URL — prevent SSRF and non-HTTPS downloads
-    const safeUrl = validateDownloadUrl(fileUrl);
-
-    // Sanitize file name from API response — prevent path traversal
-    const safeFileName = sanitizeFileName(fileName);
-
-    // Validate output directory
-    validateSafeOutputDir(outputDir);
-
-    const resp = await fetch(safeUrl, { redirect: 'manual' });
-    if (!resp.ok) {
-      console.error(`[ERROR] Download failed: HTTP ${resp.status}`);
-      return null;
-    }
-
-    const buffer = Buffer.from(await resp.arrayBuffer());
-    await fs.mkdir(outputDir, { recursive: true });
-
-    let filePath = path.join(outputDir, safeFileName);
-
-    // Avoid overwriting existing files
-    try {
-      await fs.access(filePath);
-      const ext = path.extname(filePath);
-      const stem = path.basename(filePath, ext);
-      let counter = 1;
-      while (true) {
-        filePath = path.join(outputDir, `${stem}_${counter}${ext}`);
-        try {
-          await fs.access(filePath);
-          counter++;
-        } catch {
-          break;
-        }
-      }
-    } catch {
-      // File doesn't exist, use as-is
-    }
-
-    await fs.writeFile(filePath, buffer);
-    console.log(`[SUCCESS] File saved: ${filePath}`);
-    return filePath;
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[ERROR] Download failed: ${message}`);
-    return null;
   }
 }
 

@@ -1,79 +1,17 @@
 /**
  * Skill file generator
  *
- * Generates SKILL.md files:
- * - anygen/SKILL.md          — main skill: API resources, helper commands, operation routing
- * - anygen-{name}/SKILL.md   — per-operation skills: workflow, tips
+ * Generates three SKILL.md files:
+ * - anygen/SKILL.md           — shared: auth, CLI syntax, discovering commands, security
+ * - anygen-generate/SKILL.md  — workflow: the full content generation flow
+ * - anygen-download/SKILL.md  — helper: +download command usage
  */
-
-import { OPERATIONS, type OperationDef } from './operations.js';
 
 const VERSION = '1.0.0';
 
 // ---------------------------------------------------------------------------
-// Shared sections
+// Metadata
 // ---------------------------------------------------------------------------
-
-function authSection(): string {
-  return `## Authentication
-
-If not authenticated, run \`anygen auth login\` in the background (see Background Execution). Once complete, proceed with the workflow.
-
-Alternatively, set the API key directly:
-
-\`\`\`bash
-export ANYGEN_API_KEY=sk-xxx
-\`\`\``;
-}
-
-function discoveringSection(): string {
-  return `## Discovering Commands
-
-\`\`\`bash
-# Browse all resources and methods
-anygen --help
-
-# Inspect a specific method's required params, types, and defaults
-anygen schema <resource>.<method>
-\`\`\``;
-}
-
-function backgroundSection(taskDuration: string): string {
-  return `## Background Execution
-
-The following commands are blocking — always run them in the background:
-
-| Command | Duration |
-|---------|----------|
-| \`anygen auth login\` | Until user completes web login |
-| \`anygen task +run\` | ${taskDuration} |
-| \`anygen message +chat\` | 1-10 minutes |
-
-Tell the user the operation is in progress while waiting.
-
-**Output format:** Commands print a final \`[RESULT] {...}\` JSON on completion with key fields (\`status\`, \`task_id\`, \`preview_url\`, \`thumbnail_url\`, \`file_path\`). If the result exceeds the inline limit, it is saved to a temp file — the output will read \`[RESULT] Output saved to <path>\`, read that file for the full result.`;
-}
-
-function tipsSection(): string {
-  return `## Tips
-
-- Always return links using Markdown format: \`[text](url)\` — this allows users to click them directly.`;
-}
-
-function securitySection(): string {
-  return `## Security Rules
-
-- **Never** output API keys or auth tokens directly.
-- **Always** confirm with user before uploading files or creating tasks.
-- **Never** upload or read any file without explicit user consent.
-- Use natural language. Never expose task_id, file_token, or CLI syntax to the user.`;
-}
-
-function seeAlsoSection(): string {
-  return `## See Also
-
-You can run \`anygen skill list\` to see all available skills, or \`anygen skill install --platform <name>\` to install.`;
-}
 
 function installMetadata(): string {
   return `  install:
@@ -84,161 +22,85 @@ function installMetadata(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Main routing SKILL.md
+// anygen (shared)
 // ---------------------------------------------------------------------------
 
-export function generateMainSkill(): string {
-  const operationRows = OPERATIONS.map((op) => {
-    const fmt = op.exportFormat || '—';
-    return `| \`${op.name}\` | ${op.title} | ${fmt} | ${op.estimatedTime} | ${op.triggers} |`;
-  }).join('\n');
-
+function generateSharedSkill(): string {
   return `---
-name: anygen
+name: anygen-shared
 version: ${VERSION}
-description: "AnyGen: AI-powered content generation. Supports slides/PPT, documents, diagrams, websites, data analysis, research reports, storybooks, financial analysis, images."
+description: "anygen CLI: Shared patterns for authentication, global flags, and output formatting."
 metadata:
   requires:
     bins: ["anygen"]
     env: ["ANYGEN_API_KEY"]
 ${installMetadata()}
-  cliHelp: "anygen --help"
 ---
 
-# anygen
+# anygen — Shared Reference
 
-${authSection()}
-
-## Operations
-
-Match user request to an operation based on triggers.
-
-| Operation | Type | Export Format | Estimated Time | Triggers |
-|-----------|------|--------------|----------------|----------|
-${operationRows}
-
-## Helper Commands
-
-### task +run
-
-Create a task, poll until completed or failed, and optionally download the output file.
+## Authentication
 
 \`\`\`bash
-anygen task +run --operation <name> --prompt <text> [flags]
+# Web login (interactive)
+anygen auth login
+
+# Direct API key
+anygen auth login --api-key sk-xxx
+
+# Environment variable
+export ANYGEN_API_KEY=sk-xxx
 \`\`\`
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| \`--operation\` | ✓ | Operation type |
-| \`--prompt\` | ✓ | Task description / prompt |
-| \`--file-tokens\` | — | File tokens from file.upload (JSON array) |
-| \`--export-format\` | — | Export format |
-| \`--output-dir\` | — | Download output file to local directory |
-| \`--timeout\` | — | Polling timeout in milliseconds |
-
-### message +chat
-
-Send a modification message to a completed task, then poll until the modification finishes.
+## CLI Syntax
 
 \`\`\`bash
-anygen message +chat --task-id <id> --content <text> [flags]
+anygen <resource> <method> [flags]
 \`\`\`
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| \`--task-id\` | ✓ | Task ID to modify |
-| \`--content\` | ✓ | Modification message |
-| \`--file-tokens\` | — | File tokens from file.upload (JSON array) |
-| \`--timeout\` | — | Polling timeout in milliseconds |
+### Method Flags
 
-${discoveringSection()}
+| Flag | Description |
+|------|-------------|
+| \`--params '<json>'\` | URL/path parameters |
+| \`--data '<json>'\` | Request body |
+| \`--dry-run\` | Show the request without sending it |
+| \`--wait\` | Re-poll until terminal state (task.get / message.list) |
+| \`--timeout <ms>\` | Polling timeout in milliseconds |
 
-${backgroundSection('Varies by operation (see Operations table)')}
+## Discovering Commands
 
-## Workflow
+\`\`\`bash
+# Browse all resources and methods
+anygen --help
+anygen task --help
 
-### 1. Upload Files (if user provides reference files)
+# Inspect a method's required params, types, and defaults
+anygen schema task.create
+anygen schema task.message.send
+\`\`\`
 
-Get user consent before reading or uploading any file. Upload with \`anygen file upload\`.
-Response includes \`file_token\` — reuse it if the same file was already uploaded in this conversation.
+Use \`anygen schema\` output to build your \`--params\` and \`--data\` flags.
 
-### 2. Gather Requirements
+## Security Rules
 
-Call \`anygen task prepare\` in a loop. Present \`reply\` to user as-is (translate if needed, but do NOT rephrase or summarize). Collect the user's answer, call again with updated \`history\`.
-Repeat until response \`status=ready\` with \`suggested_task_params\`.
-
-### 3. Confirm with User
-
-When \`status=ready\`, present the \`reply\` and \`prompt\` from \`suggested_task_params\` to the user as the content outline. NEVER auto-create without explicit user approval. If the user requests adjustments, call \`prepare\` again and re-present until approved.
-
-### 4. Create & Wait
-
-Run \`anygen task +run --operation <name> --prompt '...' --output-dir ./output\` in the background.
-Tell the user the content is being generated and they can continue chatting.
-
-When complete, notify the user with:
-- The preview URL
-- Thumbnail or preview images (if available)
-- Ask if they want to download the file locally (if available)
-
-### 5. Modify
-
-Run \`anygen message +chat --task-id <id> --content "..."\` in the background.
-When complete, share the updated preview with the user.
-
-All modifications use the same task — do NOT create a new task.
-
-${tipsSection()}
-
-${securitySection()}
-
-${seeAlsoSection()}
+- **Never** output API keys or auth tokens directly.
+- **Always** confirm with user before uploading files or creating tasks.
+- **Never** upload or read any file without explicit user consent.
+- Use natural language. Never expose task_id, file_token, or CLI syntax to the user.
+- Always return links using Markdown format: \`[text](url)\`.
 `;
 }
 
 // ---------------------------------------------------------------------------
-// Per-operation SKILL.md
+// anygen-generate (workflow)
 // ---------------------------------------------------------------------------
 
-function operationSkillName(op: OperationDef): string {
-  return op.trackingName;
-}
-
-export function generateStandaloneSkill(op: OperationDef): string {
-  const skillName = operationSkillName(op);
-  const descYaml = op.description.replace(/"/g, '\\"');
-
-  const notes = op.notes
-    ? '\n' + op.notes.map((n) => `> ${n}`).join('\n') + '\n'
-    : '';
-
-  const estTime = op.estimatedTime;
-  const pollTimeoutMs = op.pollTimeoutSeconds * 1000;
-
-  // task +run optional flags (operation-specific defaults)
-  const taskRunOptionalFlags: string[] = [];
-  taskRunOptionalFlags.push('| `--file-tokens` | — | — | File tokens from file.upload (JSON array) |');
-  if (op.exportFormat) {
-    taskRunOptionalFlags.push(`| \`--export-format\` | — | ${op.exportFormat} | Export format |`);
-  } else {
-    taskRunOptionalFlags.push('| `--export-format` | — | — | Export format (e.g. docx, drawio, excalidraw) |');
-  }
-  taskRunOptionalFlags.push('| `--output-dir` | — | — | Download output file to local directory |');
-  taskRunOptionalFlags.push(`| \`--timeout\` | — | ${pollTimeoutMs} | Polling timeout in milliseconds |`);
-
-  // Step 4 completion: what to do when task finishes
-  const completionSteps: string[] = [
-    `- The preview URL`,
-    '- Thumbnail or preview images (if available)',
-  ];
-  if (op.outputFileType) {
-    completionSteps.push(`- Ask if they want to download the file locally (${op.outputFileType})`);
-  }
-
+function generateWorkflowSkill(): string {
   return `---
-name: anygen-${skillName}
+name: anygen-workflow-generate
 version: ${VERSION}
-description: "${descYaml}"
+description: "AnyGen: Generate slides, presentations, documents, diagrams, images, websites, research reports, data analysis, and more."
 metadata:
   requires:
     bins: ["anygen"]
@@ -247,80 +109,105 @@ ${installMetadata()}
   cliHelp: "anygen --help"
 ---
 
-# ${op.name}
-${notes}
-${authSection()}
+# Content Generation Workflow
 
-## Helper Commands
+> **PREREQUISITE:** Read [\`../anygen-shared/SKILL.md\`](../anygen-shared/SKILL.md) for auth, global flags, and security rules.
 
-### task +run
+## Steps
 
-Create a task, poll until completed or failed, and optionally download the output file.
+1. **Upload reference files** (optional, get user consent first): \`anygen file upload --data '{"file":"./data.csv"}'\`
+   → Tell user file uploaded successfully, save \`file_token\` for step 4.
+
+2. **Gather requirements**: call \`anygen task prepare\` in a loop, collect answers, repeat until \`status=ready\`
+   → Present \`reply\` questions to user each round. When ready, present the suggested outline and confirm with user before proceeding.
+
+3. **Create task**: \`anygen task create --data '{"operation":"slide","prompt":"..."}'\`
+   → Share \`task_url\` and estimated time with user.
+
+4. **Wait & deliver**: \`anygen task get --params '{"task_id":"<id>"}' --wait\` (use \`sessions_spawn\`), then \`anygen task +download --task-id <id> --thumbnail\`
+   → Send thumbnail preview with \`task_url\`. Tell user they can request changes or ask to download the file.
+
+5. **Download** (on user request): \`anygen task +download --task-id <id>\`
+   → Send downloaded file to user.
+
+6. **Modify** (on user request): \`anygen task message send --params '{"task_id":"<id>"}' --data '{"content":"..."}'\`, then \`anygen task message list --params '{"task_id":"<id>"}' --wait\` (use \`sessions_spawn\`)
+   → Repeat step 4 to show updated preview. All modifications reuse the same task.
+
+## Tips
+
+- Run \`anygen task operations\` to discover supported content types, estimated times, and available outputs (thumbnail, file).
+- Before calling any method, run \`anygen schema <resource.method>\` to check required params and response format.
+- Always show the thumbnail preview to user if available. List all output file names and ask user if they need to download.
+- Steps 4 and 6 (\`--wait\`) are long-running. Always use \`sessions_spawn\` to run them in the background.
+
+## See Also
+
+- [\`anygen-task-download\`](../anygen-task-download/SKILL.md) — Download artifacts from a completed task
+`;
+}
+
+// ---------------------------------------------------------------------------
+// anygen-download (helper)
+// ---------------------------------------------------------------------------
+
+function generateDownloadSkill(): string {
+  return `---
+name: anygen-task-download
+version: ${VERSION}
+description: "AnyGen: Download artifacts from a completed task."
+metadata:
+  requires:
+    bins: ["anygen"]
+    env: ["ANYGEN_API_KEY"]
+${installMetadata()}
+  cliHelp: "anygen task +download --help"
+---
+
+# task +download
+
+> **PREREQUISITE:** Read [\`../anygen-shared/SKILL.md\`](../anygen-shared/SKILL.md) for auth, global flags, and security rules.
+
+Download artifacts from a completed task.
+
+## Usage
 
 \`\`\`bash
-anygen task +run --operation ${op.name} --prompt <text> [flags]
+anygen task +download --task-id <id> --output-dir <dir>
 \`\`\`
 
-| Flag | Required | Default | Description |
-|------|----------|---------|-------------|
-| \`--prompt\` | ✓ | — | Task description / prompt |
-${taskRunOptionalFlags.join('\n')}
+## Flags
 
-### message +chat
+| Flag | Required | Description |
+|------|----------|-------------|
+| \`--task-id\` | ✓ | Task ID |
+| \`--output-dir\` | — | Local directory to save files (default: current directory) |
+| \`--thumbnail\` | — | Download thumbnail image instead of main file |
 
-Send a modification message to a completed task, then poll until the modification finishes.
+## Examples
 
 \`\`\`bash
-anygen message +chat --task-id <id> --content <text> [flags]
+# Download main file
+anygen task +download --task-id xxx
+
+# Download thumbnail (for preview)
+anygen task +download --task-id xxx --thumbnail
+
+# Specify output directory
+anygen task +download --task-id xxx --output-dir ./output
 \`\`\`
 
-| Flag | Required | Default | Description |
-|------|----------|---------|-------------|
-| \`--task-id\` | ✓ | — | Task ID to modify |
-| \`--content\` | ✓ | — | Modification message |
-| \`--file-tokens\` | — | — | File tokens from file.upload (JSON array) |
-| \`--timeout\` | — | ${pollTimeoutMs} | Polling timeout in milliseconds |
+## Tips
 
-${discoveringSection()}
+- The task must be in \`completed\` state. Use \`task get --wait\` first if needed.
+- Use \`--thumbnail\` first to show a preview, then download the main file when user requests it.
+- For smart_draw tasks, the main file is automatically rendered to PNG.
 
-${backgroundSection(`~${estTime}`)}
+> [!CAUTION]
+> This is a **write** command (writes files to disk) — confirm the output directory with the user.
 
-## Workflow
+## See Also
 
-### 1. Upload Files (if user provides reference files)
-
-Get user consent before reading or uploading any file. Upload with \`anygen file upload\`.
-Response includes \`file_token\` — reuse it if the same file was already uploaded in this conversation.
-
-### 2. Gather Requirements
-
-Call \`anygen task prepare\` in a loop. Present \`reply\` to user as-is (translate if needed, but do NOT rephrase or summarize). Collect the user's answer, call again with updated \`history\`.
-Repeat until response \`status=ready\` with \`suggested_task_params\`.
-
-### 3. Confirm with User
-
-When \`status=ready\`, present the \`reply\` and \`prompt\` from \`suggested_task_params\` to the user as the content outline. NEVER auto-create without explicit user approval. If the user requests adjustments, call \`prepare\` again and re-present until approved.
-
-### 4. Create & Wait
-
-Run \`anygen task +run --operation ${op.name} --prompt '...' --output-dir ./output\` in the background.
-Tell the user: the ${op.contentName} is being generated, and they can continue chatting.
-
-When complete, notify the user with:
-${completionSteps.join('\n')}
-
-### 5. Modify
-
-Run \`anygen message +chat --task-id <id> --content "..."\` in the background.
-When complete, share the updated preview with the user.
-
-All modifications use the same task — do NOT create a new task.
-
-${tipsSection()}
-
-${securitySection()}
-
-${seeAlsoSection()}
+- [\`anygen-workflow-generate\`](../anygen-workflow-generate/SKILL.md) — Full content generation workflow
 `;
 }
 
@@ -334,17 +221,9 @@ export interface SkillFile {
 }
 
 export function generateAllSkillFiles(): SkillFile[] {
-  const files: SkillFile[] = [];
-
-  files.push({ path: 'anygen/SKILL.md', content: generateMainSkill() });
-
-  for (const op of OPERATIONS) {
-    const skillName = operationSkillName(op);
-    files.push({
-      path: `anygen-${skillName}/SKILL.md`,
-      content: generateStandaloneSkill(op),
-    });
-  }
-
-  return files;
+  return [
+    { path: 'anygen-shared/SKILL.md', content: generateSharedSkill() },
+    { path: 'anygen-workflow-generate/SKILL.md', content: generateWorkflowSkill() },
+    { path: 'anygen-task-download/SKILL.md', content: generateDownloadSkill() },
+  ];
 }

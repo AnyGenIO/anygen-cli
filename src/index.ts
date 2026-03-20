@@ -12,13 +12,54 @@ import { Command } from 'commander';
 import { loadConfig } from './config/config.js';
 import { getDiscoveryDocument, clearCache } from './discovery/client.js';
 import type { DiscoveryDocument } from './discovery/types.js';
-import { buildDynamicCommands, buildSchemaCommand } from './commands/dynamic.js';
+import { buildDynamicCommands } from './commands/dynamic.js';
+import { buildSchemaCommand } from './commands/schema-cmd.js';
 import { buildAuthCommand } from './commands/auth-cmd.js';
 import { buildSkillCommand } from './commands/skill-cmd.js';
+import { CLI_VERSION } from './version.js';
 
 const program = new Command('anygen')
-  .version('0.1.0')
-  .description('AnyGen CLI - AI content generation platform');
+  .version(CLI_VERSION)
+  .description('AnyGen CLI - AI content generation platform')
+  .helpCommand(false)
+  .configureHelp({
+    // Override: put description before usage (like cobra / larksuite-cli)
+    formatHelp(cmd, helper) {
+      const termWidth = helper.padWidth(cmd, helper);
+      const helpWidth = helper.helpWidth ?? 80;
+      function callFormatItem(term: string, description: string) {
+        return helper.formatItem(term, termWidth, description, helper);
+      }
+
+      let output: string[] = [];
+
+      // Description first
+      const desc = helper.commandDescription(cmd);
+      if (desc.length > 0) {
+        output.push(helper.boxWrap(desc, helpWidth), '');
+      }
+
+      // Then usage
+      output.push(`Usage: ${helper.commandUsage(cmd)}`, '');
+
+      // Arguments
+      const argList = helper.visibleArguments(cmd).map((a) =>
+        callFormatItem(helper.argumentTerm(a), helper.argumentDescription(a)));
+      if (argList.length > 0) output.push('Arguments:', ...argList, '');
+
+      // Options
+      const optList = helper.visibleOptions(cmd).map((o) =>
+        callFormatItem(helper.optionTerm(o), helper.optionDescription(o)));
+      if (optList.length > 0) output.push('Options:', ...optList, '');
+
+      // Commands
+      const cmdList = helper.visibleCommands(cmd).map((c) =>
+        callFormatItem(helper.subcommandTerm(c), helper.subcommandDescription(c)));
+      if (cmdList.length > 0) output.push('Commands:', ...cmdList, '');
+
+      return output.join('\n');
+    },
+  });
 
 program
   .option('--api-key <key>', 'API Key (overrides env and config file)')
@@ -41,7 +82,7 @@ function printHelp(doc: DiscoveryDocument | null): void {
   if (doc) {
     const lines: string[] = [];
     for (const [name, resource] of Object.entries(doc.resources)) {
-      const desc = resource.description || Object.keys(resource.methods).join(', ');
+      const desc = resource.description || Object.keys(resource.methods ?? {}).join(', ');
       lines.push(`    ${name.padEnd(17)}${desc}`);
     }
     resourcesBlock = `\nRESOURCES:\n${lines.join('\n')}`;
@@ -56,33 +97,24 @@ USAGE:
     anygen schema [resource.method]
 
 EXAMPLES:
-    anygen task +run --operation slide --prompt "Q4 deck" --output-dir .
-    anygen message +chat --task-id <id> --content "Change the title"
-    anygen file upload --file ./data.csv
+    anygen task create --data '{"operation":"slide","prompt":"Q4 deck"}'
+    anygen task get --params '{"task_id":"xxx"}' --wait
+    anygen task +download --task-id <id> --output-dir ./output
     anygen schema task.create
 ${resourcesBlock}
 
 COMMANDS:
     auth             Authenticate with AnyGen
-    schema           Inspect API schema
-    skill            Manage Agent Skills
+    schema           Inspect API schema (e.g. anygen schema task.create)
+    skill            Manage AnyGen skills
 
-FLAGS:
-    --params <json>  Request body as JSON string
-    --raw            Output raw JSON without formatting
-    --api-key <key>  API Key (overrides env and config file)
-    --no-cache       Skip Discovery Document cache
-    -V, --version    Show version
-    -h, --help       Show this help (try: anygen task --help)
+OPTIONS:
+    --params <json>       URL/path parameters as JSON
+    --data <json>         Request body as JSON (POST/PUT)
+    --dry-run             Show the request without sending it
 
 ENVIRONMENT:
-    ANYGEN_API_KEY   API key for authentication
-
-AUTH:
-    anygen auth login                  Web login or verify existing key
-    anygen auth login --api-key sk-xxx Configure a specific API key
-    anygen auth status                 Show current authentication status
-    anygen auth logout                 Remove stored API key`);
+    ANYGEN_API_KEY   API key for authentication`);
 }
 
 async function main(): Promise<void> {
@@ -91,6 +123,8 @@ async function main(): Promise<void> {
   const skipDiscovery = ['auth', 'cache-clear', 'skill', '-V', '--version'].includes(args[0]);
   const isHelp = args.length === 0 || (args.length === 1 && ['-h', '--help'].includes(args[0]));
 
+  // Pre-parse global options before parseAsync (needed for discovery phase)
+  const { operands: _, unknown: __ } = program.parseOptions(process.argv.slice(2));
   const globalOpts = program.opts();
   const config = await loadConfig({ apiKey: globalOpts.apiKey });
 
@@ -121,7 +155,8 @@ async function main(): Promise<void> {
   await program.parseAsync(process.argv);
 }
 
+import { outputError, toCliError } from './errors.js';
+
 main().catch((err) => {
-  console.error(err);
-  process.exit(1);
+  outputError(toCliError(err));
 });

@@ -1,11 +1,11 @@
 /**
- * Diagram → PNG 渲染引擎
+ * Diagram → PNG rendering engine
  *
- * 使用 Playwright (headless Chromium) 在浏览器中渲染：
- * - Excalidraw: 加载 @excalidraw/excalidraw 库，JSON → PNG
- * - DrawIO: 加载 diagrams.net viewer，XML → SVG → screenshot
+ * Uses Playwright (headless Chromium) to render in-browser:
+ * - Excalidraw: loads @excalidraw/excalidraw lib, JSON → PNG
+ * - DrawIO: loads diagrams.net viewer, XML → SVG → screenshot
  *
- * 移植自 anygen-suite-skill/scripts/diagram-to-image.ts
+ * Ported from anygen-suite-skill/scripts/diagram-to-image.ts
  */
 
 import * as fs from 'fs';
@@ -18,20 +18,43 @@ import { fileURLToPath } from 'url';
 
 export type DiagramType = 'excalidraw' | 'drawio';
 
+/** Minimal Playwright interfaces (lazy-loaded, no compile-time dependency) */
+interface PwModule {
+  chromium: {
+    launch(opts?: { executablePath?: string; args?: string[] }): Promise<PwBrowser>;
+  };
+}
+
+interface PwBrowser {
+  newPage(): Promise<PwPage>;
+  close(): Promise<void>;
+}
+
+interface PwPage {
+  setContent(html: string, opts?: { waitUntil?: string }): Promise<void>;
+  waitForFunction(expression: string, opts?: { timeout?: number }): Promise<void>;
+  evaluate(expression: string): Promise<unknown>;
+  $(selector: string): Promise<PwElement | null>;
+}
+
+interface PwElement {
+  screenshot(opts?: { type?: string }): Promise<Buffer>;
+}
+
 export interface RenderOptions {
   type: DiagramType;
-  /** 原始内容：JSON 字符串 (excalidraw) 或 XML (drawio) */
+  /** Raw content: JSON string (excalidraw) or XML (drawio) */
   content: string;
-  /** PNG 缩放因子（默认 2）*/
+  /** PNG scale factor (default 2) */
   scale?: number;
-  /** 背景色（默认 #ffffff）*/
+  /** Background color (default #ffffff) */
   background?: string;
-  /** 导出内边距 px（默认 20）*/
+  /** Export padding in px (default 20) */
   padding?: number;
 }
 
 export interface RenderResult {
-  /** PNG 二进制数据 */
+  /** PNG binary data */
   data: Buffer;
 }
 
@@ -39,8 +62,8 @@ export interface RenderResult {
 // Lazy Playwright import
 // ---------------------------------------------------------------------------
 
-async function getPlaywright(): Promise<any> {
-  // ESM 下没有 __dirname，手动计算
+async function getPlaywright(): Promise<PwModule> {
+  // ESM has no __dirname, compute manually
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
   const projectRoot = path.resolve(currentDir, '../..');
 
@@ -66,7 +89,7 @@ async function getPlaywright(): Promise<any> {
   );
 }
 
-async function launchBrowser(pw: any): Promise<any> {
+async function launchBrowser(pw: PwModule): Promise<PwBrowser> {
   const systemChromePaths = [
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/Applications/Chromium.app/Contents/MacOS/Chromium',
@@ -104,8 +127,9 @@ function findPnpmPackage(projectRoot: string, name: string): string[] {
 // ---------------------------------------------------------------------------
 // HTML Templates
 //
-// 所有浏览器端逻辑以纯 JS 字符串写在 HTML 模板内，
-// 避免 tsx/esbuild 注入 Node 特有 helper（__name 等）到 page.evaluate()
+// All browser-side logic is written as plain JS strings in HTML templates
+// to prevent tsx/esbuild from injecting Node-specific helpers (__name etc.)
+// into page.evaluate() calls.
 // ---------------------------------------------------------------------------
 
 function excalidrawHtml(background: string): string {
@@ -234,7 +258,7 @@ function drawioHtml(xml: string, background: string): string {
 // Renderers
 // ---------------------------------------------------------------------------
 
-async function waitForReady(page: any, timeoutMs = 120_000): Promise<void> {
+async function waitForReady(page: PwPage, timeoutMs = 120_000): Promise<void> {
   await page.waitForFunction('window.__ready === true', { timeout: timeoutMs });
   const error = await page.evaluate('window.__error');
   if (error) {
@@ -243,7 +267,7 @@ async function waitForReady(page: any, timeoutMs = 120_000): Promise<void> {
 }
 
 async function renderExcalidraw(
-  page: any,
+  page: PwPage,
   content: string,
   opts: { scale: number; background: string; padding: number },
 ): Promise<Buffer> {
@@ -252,14 +276,14 @@ async function renderExcalidraw(
 
   await page.evaluate(`window.__inputData = ${JSON.stringify(content)}`);
 
-  const base64: string = await page.evaluate(
+  const base64 = await page.evaluate(
     `window.__exportPng(window.__inputData, ${JSON.stringify(opts.background)}, ${opts.padding}, ${opts.scale})`,
-  );
+  ) as string;
   return Buffer.from(base64, 'base64');
 }
 
 async function renderDrawio(
-  page: any,
+  page: PwPage,
   content: string,
   opts: { scale: number; background: string },
 ): Promise<Buffer> {
@@ -278,7 +302,7 @@ async function renderDrawio(
 // ---------------------------------------------------------------------------
 
 /**
- * 渲染 Excalidraw / DrawIO 图表为 PNG
+ * Render an Excalidraw / DrawIO diagram to PNG.
  */
 export async function renderDiagram(opts: RenderOptions): Promise<RenderResult> {
   const pw = await getPlaywright();

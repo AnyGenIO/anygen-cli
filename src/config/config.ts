@@ -1,7 +1,7 @@
 /**
  * Configuration: ~/.config/anygen/config.json
  *
- * Priority: --api-key flag > config file > ANYGEN_API_KEY env
+ * Priority: --api-key flag > ANYGEN_API_KEY env > config file
  *
  * File permissions 0600 (owner-only) since it contains API key.
  */
@@ -21,6 +21,7 @@ export interface AnygenConfig {
   baseUrl: string;
   apiKey: string;
   apiKeySource: ApiKeySource;
+  fetchToken?: string;
 }
 
 /**
@@ -35,22 +36,22 @@ export async function loadConfig(overrides?: { apiKey?: string }): Promise<Anyge
   if (overrides?.apiKey) {
     apiKey = overrides.apiKey;
     apiKeySource = 'flag';
-  } else if (fileConfig.apiKey) {
-    apiKey = fileConfig.apiKey;
-    apiKeySource = 'config';
   } else if (process.env.ANYGEN_API_KEY) {
     apiKey = process.env.ANYGEN_API_KEY;
     apiKeySource = 'env';
+  } else if (fileConfig.apiKey) {
+    apiKey = fileConfig.apiKey;
+    apiKeySource = 'config';
   } else {
     apiKey = '';
     apiKeySource = 'none';
   }
 
-  return { baseUrl: BASE_URL, apiKey, apiKeySource };
+  return { baseUrl: BASE_URL, apiKey, apiKeySource, fetchToken: fileConfig.fetchToken };
 }
 
 /**
- * Save API key to config file
+ * Save API key to config file (clears fetch_token)
  */
 export async function saveApiKey(apiKey: string): Promise<void> {
   await fs.mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
@@ -58,12 +59,34 @@ export async function saveApiKey(apiKey: string): Promise<void> {
 }
 
 /**
- * Remove API key from config file
+ * Save fetch_token to config file (preserves existing api_key)
+ */
+export async function saveFetchToken(fetchToken: string): Promise<void> {
+  const existing = await loadConfigFile();
+  const data: Record<string, string> = {};
+  if (existing.apiKey) data.api_key = existing.apiKey;
+  data.fetch_token = fetchToken;
+  await fs.mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  await fs.writeFile(CONFIG_FILE, JSON.stringify(data, null, 2) + '\n', { mode: 0o600 });
+}
+
+/**
+ * Clear fetch_token from config file (preserves existing api_key)
+ */
+export async function clearFetchToken(): Promise<void> {
+  const existing = await loadConfigFile();
+  const data: Record<string, string> = {};
+  if (existing.apiKey) data.api_key = existing.apiKey;
+  await fs.mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  await fs.writeFile(CONFIG_FILE, JSON.stringify(data, null, 2) + '\n', { mode: 0o600 });
+}
+
+/**
+ * Remove API key and fetch_token from config file
  */
 export async function removeApiKey(): Promise<void> {
   try {
     await fs.access(CONFIG_FILE);
-    // Overwrite with empty config (preserves file, clears key)
     await fs.writeFile(CONFIG_FILE, '', { mode: 0o600 });
   } catch {
     // File doesn't exist, nothing to remove
@@ -78,14 +101,17 @@ export async function getStoredApiKey(): Promise<string> {
   return config.apiKey || '';
 }
 
-async function loadConfigFile(): Promise<{ apiKey?: string }> {
+async function loadConfigFile(): Promise<{ apiKey?: string; fetchToken?: string }> {
   try {
     const raw = await fs.readFile(CONFIG_FILE, 'utf-8');
     // Strip trailing commas before closing braces/brackets (Python compat)
     const cleaned = raw.replace(/,\s*([\]}])/g, '$1');
     const parsed = JSON.parse(cleaned);
     if (!parsed || typeof parsed !== 'object') return {};
-    return { apiKey: parsed.api_key || undefined };
+    return {
+      apiKey: parsed.api_key || undefined,
+      fetchToken: parsed.fetch_token || undefined,
+    };
   } catch {
     return {};
   }

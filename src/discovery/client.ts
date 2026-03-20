@@ -1,5 +1,5 @@
 /**
- * Discovery Document 拉取 + 本地缓存（24 小时）
+ * Discovery Document fetch + local cache
  */
 
 import * as fs from 'fs/promises';
@@ -17,32 +17,28 @@ interface CacheEntry {
 }
 
 /**
- * 获取 Discovery Document（优先读缓存，过期则重新拉取）
+ * Get Discovery Document (reads from cache first, re-fetches if expired).
  */
 export async function getDiscoveryDocument(baseUrl: string): Promise<DiscoveryDocument> {
-  // 尝试读取缓存
   const cached = await readCache();
   if (cached) {
     return cached;
   }
 
-  // 从服务端拉取
   const doc = await fetchFromServer(baseUrl);
-
-  // 写入缓存
   await writeCache(doc);
 
   return doc;
 }
 
 /**
- * 清除本地缓存（强制下次从服务端拉取）
+ * Clear local cache (forces re-fetch on next call).
  */
 export async function clearCache(): Promise<void> {
   try {
     await fs.unlink(CACHE_FILE);
   } catch {
-    // 文件不存在，忽略
+    // File does not exist, ignore
   }
 }
 
@@ -54,7 +50,7 @@ async function readCache(): Promise<DiscoveryDocument | null> {
       return entry.document;
     }
   } catch {
-    // 缓存不存在或损坏，忽略
+    // Cache missing or corrupted, ignore
   }
   return null;
 }
@@ -65,7 +61,7 @@ async function writeCache(doc: DiscoveryDocument): Promise<void> {
     const entry: CacheEntry = { fetchedAt: Date.now(), document: doc };
     await fs.writeFile(CACHE_FILE, JSON.stringify(entry, null, 2));
   } catch {
-    // 缓存写入失败不影响主流程
+    // Cache write failure does not affect main flow
   }
 }
 
@@ -81,3 +77,4 @@ async function fetchFromServer(baseUrl: string): Promise<DiscoveryDocument> {
 
   return await resp.json() as DiscoveryDocument;
 }
+

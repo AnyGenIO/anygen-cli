@@ -1,6 +1,6 @@
 /**
- * Discovery Document 类型定义
- * 与服务端 biz/discovery/registry.go 中的结构对应
+ * Discovery Document type definitions
+ * Aligned with GWS Discovery format + AnyGen extensions
  */
 
 export interface DiscoveryDocument {
@@ -9,12 +9,15 @@ export interface DiscoveryDocument {
   title: string;
   description: string;
   baseUrl: string;
+  schemas?: Record<string, Schema>;
+  parameters?: Record<string, Param>;
   resources: Record<string, Resource>;
 }
 
 export interface Resource {
   description?: string;
-  methods: Record<string, Method>;
+  methods?: Record<string, Method>;
+  resources?: Record<string, Resource>;
 }
 
 export interface Method {
@@ -24,23 +27,26 @@ export interface Method {
   path: string;
   request?: Schema;
   response?: Schema;
-  parameters?: Param[];
+  parameters?: Record<string, Param>;
+  /** Whether this method supports --wait polling (declared in Discovery Document) */
+  supportsPolling?: boolean;
 }
 
 export interface Param {
-  name: string;
-  location: string; // "path" | "query" | "header" | "body"
   type: string;
+  location: 'path' | 'query' | 'header' | 'body';
   required: boolean;
-  description: string;
+  description?: string;
 }
 
 export interface Schema {
-  type: string;
+  id?: string;
+  type?: string;
+  $ref?: string;
   description?: string;
   properties?: Record<string, Schema>;
   items?: Schema;
-  required?: string[];
+  required?: boolean;
   enum?: string[];
   format?: string;
   additionalProperties?: Schema;
