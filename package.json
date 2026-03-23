@@ -1,7 +1,7 @@
 {
-  "name": "anygen-cli",
+  "name": "@anygen/cli",
   "version": "0.1.0",
-  "description": "AnyGen CLI - AI content generation platform CLI tool",
+  "description": "AnyGen CLI - AI-powered content generation platform",
   "type": "module",
   "bin": {
     "anygen": "./bin/anygen.js"
@@ -24,12 +24,24 @@
     "test:watch": "vitest"
   },
   "keywords": [
-    "anygen",
     "cli",
-    "ai",
-    "content-generation"
+    "anygen",
+    "ppt",
+    "doc",
+    "image",
+    "diagram",
+    "ai-agent",
+    "agent-skills"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AnyGenIO/anygen-cli.git"
+  },
+  "homepage": "https://www.anygen.io/",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=18.0.0"
   },
