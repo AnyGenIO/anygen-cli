@@ -42,10 +42,10 @@ ${installMetadata()}
 ## Authentication
 
 \`\`\`bash
-# Web login (interactive)
-anygen auth login
+# Web login (recommended for agent usage)
+anygen auth login --no-wait
 
-# Direct API key
+# Direct API key (no browser needed)
 anygen auth login --api-key sk-xxx
 
 # Environment variable
@@ -115,30 +115,41 @@ ${installMetadata()}
 
 ## Steps
 
-1. **Upload reference files** (optional, get user consent first): \`anygen file upload --data '{"file":"./data.csv"}'\`
-   → Tell user file uploaded successfully, save \`file_token\` for step 4.
+1. **Upload reference files** (optional, confirm with user first):
+   \`anygen file upload --data '{"file":"./data.csv"}'\`
+   → Save \`file_token\` for step 3. Tell user the file was uploaded.
 
-2. **Gather requirements**: call \`anygen task prepare\` in a loop, collect answers, repeat until \`status=ready\`
-   → Present \`reply\` questions to user each round. When ready, present the suggested outline and confirm with user before proceeding.
+2. **Gather requirements** (optional, for unclear requirements):
+   \`anygen task prepare --data '{"operation":"slide","messages":[{"role":"user","content":"Make a Q4 report PPT"}]}'\`
+   Present \`reply\` to user, collect their answer, then call again with \`prepare_session_id\` and updated \`messages\`:
+   \`anygen task prepare --data '{"operation":"slide","prepare_session_id":"<id>","messages":[...previous messages...,{"role":"user","content":"user's answer"}]}'\`
+   Repeat until \`status=ready\`. Use \`suggested_task_params.prompt\` in step 3.
+   → When ready, show the suggested outline and confirm before proceeding.
 
-3. **Create task**: \`anygen task create --data '{"operation":"slide","prompt":"..."}'\`
-   → Share \`task_url\` and estimated time with user.
+3. **Create task**:
+   \`anygen task create --data '{"operation":"slide","prompt":"..."}'\`
+   → Tell user the task is created, share \`task_url\` and estimated time.
 
-4. **Wait & deliver**: \`anygen task get --params '{"task_id":"<id>"}' --wait\` (use \`sessions_spawn\`), then \`anygen task +download --task-id <id> --thumbnail\`
-   → Send thumbnail preview with \`task_url\`. Tell user they can request changes or ask to download the file.
+4. **Wait & deliver**:
+   \`anygen task get --params '{"task_id":"<id>"}' --wait\` (long-running, run in background)
+   \`anygen task +download --task-id <id> --thumbnail\`
+   → Send thumbnail preview with \`task_url\`. Ask user if they want to request changes or download the file.
 
-5. **Download** (on user request): \`anygen task +download --task-id <id>\`
-   → Send downloaded file to user.
+5. **Download** (on user request):
+   \`anygen task +download --task-id <id>\`
+   → Send the downloaded file to user.
 
-6. **Modify** (on user request): \`anygen task message send --params '{"task_id":"<id>"}' --data '{"content":"..."}'\`, then \`anygen task message list --params '{"task_id":"<id>"}' --wait\` (use \`sessions_spawn\`)
+6. **Modify** (on user request):
+   \`anygen task message send --params '{"task_id":"<id>"}' --data '{"content":"..."}'\`
+   \`anygen task message list --params '{"task_id":"<id>"}' --wait\` (long-running, run in background)
    → Repeat step 4 to show updated preview. All modifications reuse the same task.
 
 ## Tips
 
-- Run \`anygen task operations\` to discover supported content types, estimated times, and available outputs (thumbnail, file).
-- Before calling any method, run \`anygen schema <resource.method>\` to check required params and response format.
-- Always show the thumbnail preview to user if available. List all output file names and ask user if they need to download.
-- Steps 4 and 6 (\`--wait\`) are long-running. Always use \`sessions_spawn\` to run them in the background.
+- Run \`anygen task operations\` to discover supported operation types, estimated times, export formats, and thumbnail availability.
+- Run \`anygen schema <resource.method>\` to check required params and response format before calling any method.
+- Always show thumbnail preview if available. List all output files and ask if user wants to download.
+- Long-running commands (\`--wait\`) should be run in the background or delegated to a sub-agent to avoid blocking.
 
 ## See Also
 

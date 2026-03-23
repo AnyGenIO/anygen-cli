@@ -27,7 +27,20 @@ export async function downloadToLocal(
   // Validate output directory
   validateSafeOutputDir(outputDir);
 
-  const resp = await fetch(safeUrl, { redirect: 'follow' });
+  // Use redirect:'manual' to re-validate redirect targets (SSRF prevention)
+  let resp = await fetch(safeUrl, { redirect: 'manual' });
+
+  // Follow redirects with SSRF re-validation (max 5 hops)
+  let redirects = 0;
+  while (resp.status >= 300 && resp.status < 400 && redirects < 5) {
+    const location = resp.headers.get('location');
+    if (!location) break;
+    const redirectUrl = new URL(location, safeUrl).href;
+    validateDownloadUrl(redirectUrl);
+    resp = await fetch(redirectUrl, { redirect: 'manual' });
+    redirects++;
+  }
+
   if (!resp.ok) {
     outputError(networkError(`Download failed: HTTP ${resp.status}`));
   }

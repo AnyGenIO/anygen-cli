@@ -1,8 +1,24 @@
 # anygen-cli
 
-CLI for [AnyGen](https://www.anygen.io) — AI content generation platform. Generate slides, documents, diagrams, websites, research reports, and more from the terminal.
+CLI for [AnyGen](https://www.anygen.io) — AI-powered content generation platform.
 
 Auto-generates commands from a Discovery Document, with structured JSON output for AI Agent integration.
+
+### Supported Content Types
+
+| Type | Operation | Description |
+|------|-----------|-------------|
+| Slides / PPT | `slide` | Pitch decks, keynotes, quarterly reviews, training materials |
+| Documents | `doc` | Technical design docs, PRDs, white papers, SOPs |
+| Diagrams | `smart_draw` | Architecture diagrams, flowcharts, mind maps, ER diagrams, UML |
+| Research Reports | `deep_research` | Industry analysis, market sizing, competitive landscape |
+| Data Analysis | `data_analysis` | CSV analysis, charts, dashboards, KPI tracking |
+| Financial Research | `finance` | Earnings analysis, stock research, company valuations |
+| Storybooks | `storybook` | Illustrated stories, comics, children's books |
+| Websites | `website` | Landing pages, product pages, portfolio sites |
+| Image Design | `ai_designer` | Posters, banners, social media graphics, marketing creatives |
+
+Run `anygen task operations` for the full list.
 
 ## Install
 
@@ -31,7 +47,8 @@ anygen task +download --task-id xxx
 ## Authentication
 
 ```bash
-anygen auth login                  # Web login (opens browser)
+anygen auth login                  # Web login (interactive, waits for browser auth)
+anygen auth login --no-wait        # Web login (non-blocking, returns auth URL)
 anygen auth login --api-key sk-xxx # Direct API key
 export ANYGEN_API_KEY=sk-xxx       # Environment variable
 
@@ -135,17 +152,20 @@ See [docs/error-handling.md](docs/error-handling.md) for details.
 ```
 ┌──────────────────────────────────────────────────┐
 │                  CLI Entry (commander)            │
-│  auth | schema | skill                           │
+│  index.ts — auth | schema | skill                │
 ├──────────┬───────────────────────────────────────┤
 │ Dynamic  │         Helpers (+)                    │
 │ Commands │         task +download                 │
-│ (auto)   │         (hand-written)                 │
+│(dynamic) │        (task-download)                 │
 ├──────────┴───────────────────────────────────────┤
-│               api/client                          │
-│  HTTP client · path params · file upload          │
+│               execute.ts                          │
+│  auth → validate → dry-run → callApi → poll      │
+├──────────────────────────────────────────────────┤
+│               api/client + utils/download         │
+│  HTTP client · path params · file download        │
 ├──────────────────────────────────────────────────┤
 │               Infrastructure                      │
-│  Config · Web Auth · Discovery Doc Cache          │
+│  Config · Auth · Discovery Doc Cache              │
 └──────────────────────────────────────────────────┘
 ```
 

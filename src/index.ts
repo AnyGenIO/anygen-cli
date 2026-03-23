@@ -17,6 +17,7 @@ import { buildSchemaCommand } from './commands/schema-cmd.js';
 import { buildAuthCommand } from './commands/auth-cmd.js';
 import { buildSkillCommand } from './commands/skill-cmd.js';
 import { CLI_VERSION } from './version.js';
+import { outputError, toCliError } from './errors.js';
 
 const program = new Command('anygen')
   .version(CLI_VERSION)
@@ -124,7 +125,7 @@ async function main(): Promise<void> {
   const isHelp = args.length === 0 || (args.length === 1 && ['-h', '--help'].includes(args[0]));
 
   // Pre-parse global options before parseAsync (needed for discovery phase)
-  const { operands: _, unknown: __ } = program.parseOptions(process.argv.slice(2));
+  program.parseOptions(process.argv.slice(2));
   const globalOpts = program.opts();
   const config = await loadConfig({ apiKey: globalOpts.apiKey });
 
@@ -154,8 +155,6 @@ async function main(): Promise<void> {
 
   await program.parseAsync(process.argv);
 }
-
-import { outputError, toCliError } from './errors.js';
 
 main().catch((err) => {
   outputError(toCliError(err));

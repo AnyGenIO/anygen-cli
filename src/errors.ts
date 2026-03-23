@@ -146,9 +146,13 @@ export function outputError(err: CliError): never {
 
 /**
  * Convert an unknown error to CliError.
+ * Detects ValidationError from security/validate.ts and maps to validation type.
  */
 export function toCliError(err: unknown): CliError {
   if (err instanceof CliError) return err;
+  if (err instanceof Error && err.name === 'ValidationError') {
+    return validationError(err.message);
+  }
   const message = err instanceof Error ? err.message : String(err);
   return internalError(message);
 }

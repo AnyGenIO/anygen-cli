@@ -22,11 +22,14 @@
 
 | # | Command | Expected | Status |
 |---|---------|----------|--------|
-| G-08 | `anygen auth login` | Opens browser, polls for key, saves to config | |
+| G-08 | `anygen auth login --no-wait` | Outputs auth URL to stdout, saves fetchToken, exits immediately | |
+| G-08b | `anygen auth login` | Opens browser URL, polls for key, saves to config | |
 | G-09 | `anygen auth login --api-key sk-xxx` | Verifies and saves key | |
 | G-10 | `anygen auth status` | Shows API Key (masked), Source, Status, Credits | |
 | G-11 | `anygen auth logout` | Removes key from config, warns if env var set | |
 | G-12 | `ANYGEN_API_KEY=sk-xxx anygen auth status` | Source shows "ANYGEN_API_KEY env" | |
+| G-13 | API command without auth | Returns auth error with hint, does NOT auto-trigger login | |
+| G-14 | API command with pending fetchToken | Tries to exchange, returns "Authorization pending" if not yet authorized | |
 
 ### 1.3 Config Priority
 

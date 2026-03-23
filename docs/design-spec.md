@@ -262,11 +262,24 @@ Hidden from: schema output, `--pretty` display, `--dry-run` output, client valid
 
 No subsystem calls `loadConfig()` independently. This prevents stale key issues.
 
-### 9.2 No Hardcoded URLs
+### 9.2 Auth: No Auto-Login
+
+`ensureAuth()` does NOT start interactive login flows. It only:
+1. Returns existing `apiKey` if available
+2. Tries to exchange a pending `fetchToken` for an `apiKey`
+3. Throws an auth error with hint to run `anygen auth login --no-wait`
+
+Interactive login (web URL + polling) is only available via `anygen auth login`.
+
+This aligns with larksuite-cli's pattern: API commands return errors when not authenticated, login is an explicit separate step.
+
+`--no-wait` is the recommended login mode for Agent usage — it outputs the auth URL to stdout and exits immediately. The `fetchToken` is persisted in config so subsequent commands can exchange it once the user authorizes.
+
+### 9.3 No Hardcoded URLs
 
 `auth.ts` functions (`verifyKey`, `getKey`, `waitForKey`) all accept `baseUrl` as a parameter. The single source of truth for `BASE_URL` is `config.ts`.
 
-### 9.3 Data-Driven Polling
+### 9.4 Data-Driven Polling
 
 The `--wait` flag is registered based on `method.supportsPolling` from Discovery Document. Until the server declares this field, CLI falls back to a hardcoded `POLLABLE_METHOD_IDS` set:
 
@@ -289,3 +302,4 @@ Once the server adds `supportsPolling`, the fallback is automatically bypassed.
 | One skill per operation | 95% content duplication | One workflow skill for all operations |
 | Duplicate config loading | Stale keys, inconsistent state | Single `loadConfig()` in main, pass config down |
 | Hardcoded URLs in subsystems | Cannot switch env/self-deploy | All URLs from config.baseUrl |
+| Auto-login in API commands | Blocks Agent indefinitely | Return auth error, login is explicit |

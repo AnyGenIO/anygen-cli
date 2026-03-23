@@ -15,21 +15,28 @@ import { pollTask, pollMessages, methodSupportsPolling } from './poll.js';
 import { validateJsonParams } from '../security/validate.js';
 import { CLI_VERSION } from '../version.js';
 import { ensureAuth } from '../api/auth.js';
-import { CliError, validationError, authError, outputError, toCliError, classifyServerError } from '../errors.js';
+import { CliError, validationError, outputError, toCliError, classifyServerError } from '../errors.js';
 import { INTERNAL_FIELDS } from '../config/internal-fields.js';
+
+interface MethodOpts {
+  params?: string;
+  data?: string;
+  dryRun?: boolean;
+  wait?: boolean;
+  timeout?: string;
+}
 
 export async function executeMethod(
   method: Method,
-  opts: Record<string, string>,
+  opts: MethodOpts,
   config: AnygenConfig,
   doc: DiscoveryDocument,
   cmd: Command,
 ): Promise<void> {
-  // Verify API key before any API call
+  // Verify API key before any API call (no interactive login — just error)
   let verifiedKey: string;
   try {
     const auth = await ensureAuth(config);
-    if (!auth) throw authError('Not authenticated.');
     verifiedKey = auth.apiKey;
   } catch (err) {
     const cliErr = toCliError(err);
@@ -137,14 +144,14 @@ export async function executeMethod(
       for (const [paramName, param] of Object.entries(method.parameters)) {
         const value = params[paramName];
         if (param.location === 'path' && value != null) {
-          url = url.replace(`:${paramName}`, String(value));
+          url = url.replace(`:${paramName}`, encodeURIComponent(String(value)));
         } else if (param.location === 'query' && value != null) {
           queryParams[paramName] = String(value);
         }
       }
     }
     if (Object.keys(queryParams).length > 0) {
-      url += '?' + Object.entries(queryParams).map(([k, v]) => `${k}=${v}`).join('&');
+      url += '?' + Object.entries(queryParams).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
     }
     // Strip internal fields from dry-run output
     let dryBody = body;

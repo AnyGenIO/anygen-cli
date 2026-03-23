@@ -18,20 +18,15 @@ metadata:
 ## Authentication
 
 ```bash
-# Web login (non-blocking, returns auth URL immediately)
+# Web login (recommended for agent usage)
 anygen auth login --no-wait
 
-# Web login (interactive, polls until user authorizes)
-anygen auth login
-
-# Direct API key
+# Direct API key (no browser needed)
 anygen auth login --api-key sk-xxx
 
 # Environment variable
 export ANYGEN_API_KEY=sk-xxx
 ```
-
-> **Tip:** Prefer `--no-wait` for agent usage — it prints the auth URL and saves a `fetch_token` to config, then exits immediately. The next CLI command will automatically exchange the `fetch_token` for an API key once the user completes authorization in the browser.
 
 ## CLI Syntax
 

@@ -10,7 +10,7 @@
 
 import { Command } from 'commander';
 import { loadConfig, saveApiKey, saveFetchToken, removeApiKey } from '../config/config.js';
-import { verifyKey, getKey, waitForKey, maskKey, isVerifyError, SOURCE_LABELS } from '../api/auth.js';
+import { verifyKey, getKey, waitForKey, maskKey, isVerifyError, parseCredits, SOURCE_LABELS } from '../api/auth.js';
 import { authError, networkError, apiError, outputError } from '../errors.js';
 
 export function buildAuthCommand(program: Command): void {
@@ -24,8 +24,10 @@ export function buildAuthCommand(program: Command): void {
     .description('Authenticate via web login or API key')
     .option('--api-key <key>', 'Configure and verify a specific API key')
     .option('--no-wait', 'Get auth URL and exit without waiting for authorization')
-    .action(async (opts: { apiKey?: string; noWait?: boolean }) => {
-      await handleLogin(opts.apiKey, opts.noWait);
+    .action(async (opts: { apiKey?: string; wait?: boolean }) => {
+      // Commander parses --no-wait as { wait: false }
+      const noWait = opts.wait === false;
+      await handleLogin(opts.apiKey, noWait);
     });
 
   authCmd
@@ -71,7 +73,7 @@ async function handleLogin(apiKeyOverride?: string, noWait?: boolean): Promise<v
 
   // Key is valid
   if (result.verified) {
-    const credits = parseInt(String(result.credits ?? '0'), 10) || 0;
+    const credits = parseCredits(result.credits);
     if (credits <= 0) {
       outputError(authError('API key is valid but has no credits remaining.'));
     }
@@ -100,22 +102,16 @@ async function handleLogin(apiKeyOverride?: string, noWait?: boolean): Promise<v
   // Persist fetchToken before printing URL — survives interruption
   await saveFetchToken(result.fetch_token);
 
-  process.stderr.write('No valid API key found. Opening web login...\n\n');
-  process.stderr.write(`  Open this URL to authorize:\n`);
-  process.stderr.write(`  ${result.auth_url}\n\n`);
-  if (result.api_key_name) {
-    process.stderr.write(`  This will create an API key named: ${result.api_key_name}\n`);
-  }
-
-  // --no-wait: output auth info and exit without polling
+  // --no-wait: print URL and exit immediately
   if (noWait) {
-    console.log(JSON.stringify({
-      auth_url: result.auth_url,
-      fetch_token: result.fetch_token,
-    }, null, 2));
+    process.stderr.write('Open this URL to authorize:\n');
+    console.log(result.auth_url);
     return;
   }
 
+  // Interactive mode: show URL and poll
+  process.stderr.write('Open this URL to authorize:\n\n');
+  process.stderr.write(`  ${result.auth_url}\n\n`);
   process.stderr.write('Waiting for authorization...\n');
 
   const key = await waitForKey(config.baseUrl, result.fetch_token);
@@ -153,7 +149,7 @@ async function handleStatus(): Promise<void> {
   }
 
   if (result.verified) {
-    const credits = parseInt(String(result.credits ?? '0'), 10) || 0;
+    const credits = parseCredits(result.credits);
     process.stderr.write(`Status:   Valid\n`);
     process.stderr.write(`Credits:  ${credits}\n`);
   } else {

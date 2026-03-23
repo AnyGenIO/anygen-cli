@@ -9,9 +9,9 @@
  * exchange a pending fetchToken, or starts the web login flow.
  */
 
-import { saveApiKey, saveFetchToken, clearFetchToken, getStoredApiKey, type ApiKeySource } from '../config/config.js';
+import { saveApiKey, clearFetchToken, getStoredApiKey, type ApiKeySource } from '../config/config.js';
 import type { AnygenConfig } from '../config/config.js';
-import { authError, networkError } from '../errors.js';
+import { authError } from '../errors.js';
 
 const AUTH_POLL_INTERVAL_MS = 10_000; // 10 seconds
 const AUTH_MAX_WAIT_MS = 900_000;     // 15 minutes
@@ -79,7 +79,7 @@ export async function getKey(baseUrl: string, fetchToken: string): Promise<{ all
 
 // ---- High-level flows ----
 
-function parseCredits(credits: unknown): number {
+export function parseCredits(credits: unknown): number {
   try {
     return parseInt(String(credits ?? '0'), 10) || 0;
   } catch {
@@ -103,13 +103,15 @@ export const SOURCE_LABELS: Record<ApiKeySource, string> = {
  * Ensure a valid API key is available before executing an API command.
  *
  * Accepts an already-loaded config object (no duplicate loadConfig calls).
+ * Does NOT start interactive login — returns an error if not authenticated.
+ * Interactive login is only available via `anygen auth login`.
  *
  * Flow:
- * 1. Has apiKey → trust it locally, no server verification (401 handled at API call site)
- * 2. Has fetchToken (from prior --no-wait or interrupted login) → try getKey to exchange for apiKey
- * 3. Neither → start login flow (verify → get auth_url/fetchToken → save fetchToken → poll)
+ * 1. Has apiKey → trust it locally (401 handled at API call site)
+ * 2. Has fetchToken (from prior interrupted login) → try getKey to exchange
+ * 3. Neither → throw auth error with hint to run `anygen auth login`
  */
-export async function ensureAuth(config: AnygenConfig): Promise<AuthResult | null> {
+export async function ensureAuth(config: AnygenConfig): Promise<AuthResult> {
   const currentKey = config.apiKey || undefined;
   const source = config.apiKeySource;
 
@@ -123,43 +125,25 @@ export async function ensureAuth(config: AnygenConfig): Promise<AuthResult | nul
     const result = await getKey(config.baseUrl, config.fetchToken);
     if (result?.allocated && result.api_key) {
       await saveApiKey(result.api_key);
-      console.error('[AUTH] API key configured successfully.');
+      await clearFetchToken();
       return { apiKey: result.api_key, source: 'config' };
     }
-    // fetchToken not yet allocated or expired — clear and start fresh login
-    await clearFetchToken();
-  }
-
-  // Path 3: No key, no fetchToken — start login flow
-  const result = await verifyKey(config.baseUrl);
-  if (isVerifyError(result)) {
-    if (result.error === 'server') {
-      throw networkError(`Service unavailable (HTTP ${result.status})`);
-    } else {
-      throw networkError('Failed to connect to AnyGen.');
+    if (result?.error) {
+      // fetchToken explicitly rejected — clear it
+      await clearFetchToken();
     }
+    // Otherwise keep fetchToken for next attempt (user may not have authorized yet)
+    throw authError(
+      'Authorization pending. Complete login in browser, then retry.',
+      'Or run: anygen auth login --api-key sk-xxx',
+    );
   }
 
-  if (!result.auth_url || !result.fetch_token) {
-    throw authError('API key is not configured.');
-  }
-
-  // Save fetchToken before polling so it survives interruption
-  await saveFetchToken(result.fetch_token);
-
-  console.error(`[AUTH] Open this URL to authorize:`);
-  console.error(`[AUTH] ${result.auth_url}`);
-  if (result.api_key_name) {
-    console.error(`[AUTH] This will create an API key named: ${result.api_key_name}`);
-  }
-  console.error('[AUTH] Waiting for authorization...');
-
-  const key = await waitForKey(config.baseUrl, result.fetch_token);
-  if (!key) {
-    throw authError('Authorization failed or timed out.', 'Run: anygen auth login --api-key sk-xxx');
-  }
-
-  return { apiKey: key, source: 'config' };
+  // Path 3: No key, no fetchToken — not authenticated at all
+  throw authError(
+    'Not authenticated.',
+    'Run: anygen auth login --no-wait, or set ANYGEN_API_KEY, or pass --api-key.',
+  );
 }
 
 /**

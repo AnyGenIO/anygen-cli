@@ -18,7 +18,7 @@ import { downloadToLocal } from '../utils/download.js';
 import { validateSafeOutputDir } from '../security/validate.js';
 import { renderDiagram, type DiagramType } from '../render/diagram.js';
 import { ensureAuth } from '../api/auth.js';
-import { validationError, authError, apiError, outputError, toCliError } from '../errors.js';
+import { validationError, apiError, outputError, toCliError } from '../errors.js';
 
 /**
  * Register `task +download` as a helper subcommand under the `task` resource command.
@@ -48,9 +48,6 @@ async function executeTaskDownload(
   config: AnygenConfig,
 ): Promise<void> {
   const auth = await ensureAuth(config);
-  if (!auth) {
-    outputError(authError('Not authenticated.'));
-  }
   const verifiedKey = auth.apiKey;
 
   const taskId = opts.taskId;
@@ -105,7 +102,7 @@ async function executeTaskDownload(
     if (!output.file_url) {
       outputError(apiError('No downloadable file found in task output.'));
     }
-    const filePath = await downloadToLocal(output.file_url as string, output.file_name as string, outputDir);
+    const filePath = await downloadToLocal(output.file_url as string, output.file_name as string | undefined, outputDir);
     if (filePath && operation === 'smart_draw') {
       downloadedFile = await renderAndCleanup(filePath) ?? filePath;
     } else {

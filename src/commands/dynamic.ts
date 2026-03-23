@@ -64,7 +64,7 @@ function buildResourceCommands(
         methodCmd.option('--wait', 'Re-poll until terminal state (completed/failed)');
         methodCmd.option('--timeout <ms>', 'Polling timeout in milliseconds');
       }
-      methodCmd.action(async (opts: Record<string, string>) => {
+      methodCmd.action(async (opts: Record<string, unknown>) => {
         await executeMethod(method, opts, config, doc, methodCmd);
       });
     }

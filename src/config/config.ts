@@ -25,7 +25,7 @@ export interface AnygenConfig {
 }
 
 /**
- * Load config (merge flag > config file > env)
+ * Load config (merge flag > env > config file)
  */
 export async function loadConfig(overrides?: { apiKey?: string }): Promise<AnygenConfig> {
   const fileConfig = await loadConfigFile();
@@ -87,7 +87,7 @@ export async function clearFetchToken(): Promise<void> {
 export async function removeApiKey(): Promise<void> {
   try {
     await fs.access(CONFIG_FILE);
-    await fs.writeFile(CONFIG_FILE, '', { mode: 0o600 });
+    await fs.writeFile(CONFIG_FILE, '{}\n', { mode: 0o600 });
   } catch {
     // File doesn't exist, nothing to remove
   }
