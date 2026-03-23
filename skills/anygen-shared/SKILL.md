@@ -18,7 +18,10 @@ metadata:
 ## Authentication
 
 ```bash
-# Web login (interactive, use sessions_spawn to run in the background.)
+# Web login (non-blocking, returns auth URL immediately)
+anygen auth login --no-wait
+
+# Web login (interactive, polls until user authorizes)
 anygen auth login
 
 # Direct API key
@@ -28,7 +31,7 @@ anygen auth login --api-key sk-xxx
 export ANYGEN_API_KEY=sk-xxx
 ```
 
-> **Note:** `auth login` opens a browser and waits for user authorization. Always run it with `sessions_spawn` to avoid blocking the agent.
+> **Tip:** Prefer `--no-wait` for agent usage — it prints the auth URL and saves a `fetch_token` to config, then exits immediately. The next CLI command will automatically exchange the `fetch_token` for an API key once the user completes authorization in the browser.
 
 ## CLI Syntax
 
@@ -65,5 +68,5 @@ Use `anygen schema` output to build your `--params` and `--data` flags.
 - **Never** output API keys or auth tokens directly.
 - **Always** confirm with user before uploading files or creating tasks.
 - **Never** upload or read any file without explicit user consent.
-- Use natural language. Never expose task_id, file_token, or CLI syntax to the user.
+- Use natural language instead of exposing task_id, file_token, or CLI syntax to the user.
 - Always return links using Markdown format: `[text](url)`.

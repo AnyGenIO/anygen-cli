@@ -5,8 +5,8 @@
  * getKey  → GET /v1/openapi/key/get     (poll for allocated key after web login)
  *
  * ensureAuth() is the main entry point — called automatically before every
- * API command. It verifies the key and, if missing/invalid, silently triggers
- * the web login flow (print URL → poll → save key → continue).
+ * API command. It trusts the local key without server verification, tries to
+ * exchange a pending fetchToken, or starts the web login flow.
  */
 
 import { saveApiKey, saveFetchToken, clearFetchToken, getStoredApiKey, type ApiKeySource } from '../config/config.js';
@@ -105,7 +105,7 @@ export const SOURCE_LABELS: Record<ApiKeySource, string> = {
  * Accepts an already-loaded config object (no duplicate loadConfig calls).
  *
  * Flow:
- * 1. Has apiKey → verify with server → return if valid
+ * 1. Has apiKey → trust it locally, no server verification (401 handled at API call site)
  * 2. Has fetchToken (from prior --no-wait or interrupted login) → try getKey to exchange for apiKey
  * 3. Neither → start login flow (verify → get auth_url/fetchToken → save fetchToken → poll)
  */
@@ -113,27 +113,9 @@ export async function ensureAuth(config: AnygenConfig): Promise<AuthResult | nul
   const currentKey = config.apiKey || undefined;
   const source = config.apiKeySource;
 
-  // Path 1: Have an API key — verify it
+  // Path 1: Have an API key — trust it locally
   if (currentKey) {
-    const result = await verifyKey(config.baseUrl, currentKey);
-    if (isVerifyError(result)) {
-      if (result.error === 'server') {
-        throw networkError(`Service unavailable (HTTP ${result.status})`);
-      } else {
-        throw networkError('Failed to connect to AnyGen.');
-      }
-    }
-
-    if (result.verified) {
-      const credits = parseCredits(result.credits);
-      if (credits <= 0) {
-        throw authError('API key is valid but has no credits remaining.');
-      }
-      return { apiKey: currentKey, source };
-    }
-
-    // Key is invalid — clear and fall through to login flow
-    throw authError(`API key from ${SOURCE_LABELS[source]} is invalid.`);
+    return { apiKey: currentKey, source };
   }
 
   // Path 2: Have a fetchToken — try to exchange for API key
