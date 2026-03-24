@@ -18,6 +18,7 @@ import { ensureAuth } from '../api/auth.js';
 import { CliError, validationError, outputError, toCliError, classifyServerError } from '../errors.js';
 import { INTERNAL_FIELDS } from '../config/internal-fields.js';
 import { stripDeprecatedFields } from '../utils/strip-deprecated.js';
+import { getDebugHeaders } from '../config/config.js';
 
 interface MethodOpts {
   params?: string;
@@ -162,12 +163,14 @@ export async function executeMethod(
       );
       if (Object.keys(dryBody).length === 0) dryBody = undefined;
     }
+    const debugHeaders = getDebugHeaders();
     console.log(JSON.stringify({
       dry_run: true,
       method: method.httpMethod,
       url,
       params: Object.keys(params).length > 0 ? params : undefined,
       body: dryBody,
+      ...(Object.keys(debugHeaders).length > 0 ? { debug_headers: debugHeaders } : {}),
     }, null, 2));
     return;
   }
