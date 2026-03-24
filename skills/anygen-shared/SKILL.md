@@ -41,7 +41,7 @@ anygen <resource> <method> [flags]
 | `--params '<json>'` | URL/path parameters |
 | `--data '<json>'` | Request body |
 | `--dry-run` | Show the request without sending it |
-| `--wait` | Re-poll until terminal state (task.get / message.list) |
+| `--wait` | Re-poll until terminal state |
 | `--timeout <ms>` | Polling timeout in milliseconds |
 
 ## Discovering Commands

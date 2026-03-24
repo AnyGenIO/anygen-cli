@@ -20,7 +20,7 @@ export function methodSupportsPolling(method: Method): boolean {
 }
 
 const POLL_INTERVAL_MS = 3000;
-const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000; // 20 min
+const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000; // 30 min
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
 /**
