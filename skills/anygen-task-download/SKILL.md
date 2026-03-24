@@ -32,13 +32,18 @@ anygen task +download --task-id <id> --output-dir <dir>
 |------|----------|-------------|
 | `--task-id` | ✓ | Task ID |
 | `--output-dir` | — | Local directory to save files (default: current directory) |
-| `--thumbnail` | — | Download thumbnail image instead of main file |
+| `--file <name...>` | — | Download specific file(s) by name (repeatable) |
+| `--thumbnail` | — | Download thumbnail image instead of main files |
 
 ## Examples
 
 ```bash
-# Download main file
+# Download all output files
 anygen task +download --task-id xxx
+
+# Download specific file(s) by name
+anygen task +download --task-id xxx --file report.pptx
+anygen task +download --task-id xxx --file report.pptx --file data.xlsx
 
 # Download thumbnail (for preview)
 anygen task +download --task-id xxx --thumbnail
@@ -47,11 +52,29 @@ anygen task +download --task-id xxx --thumbnail
 anygen task +download --task-id xxx --output-dir ./output
 ```
 
+## Output
+
+Returns JSON with downloaded file paths:
+
+```json
+{
+  "status": "completed",
+  "task_id": "xxx",
+  "files": [
+    { "file": "./report.pptx", "name": "report.pptx" },
+    { "file": "./data.xlsx", "name": "data.xlsx" }
+  ],
+  "task_url": "https://..."
+}
+```
+
 ## Tips
 
 - The task must be in `completed` state. Use `task get --wait` first if needed.
-- Use `--thumbnail` first to show a preview, then download the main file when user requests it.
-- For smart_draw tasks, the main file is automatically rendered to PNG.
+- Without `--file`, all output files are downloaded.
+- Use `--thumbnail` first to show a preview, then download the main files when user requests it.
+- For smart_draw tasks, diagram files are automatically rendered to PNG.
+- File names for `--file` come from the `output.files[].name` field in the task get response.
 
 > [!CAUTION]
 > This is a **write** command (writes files to disk) — confirm the output directory with the user.

@@ -17,6 +17,7 @@ import { CLI_VERSION } from '../version.js';
 import { ensureAuth } from '../api/auth.js';
 import { CliError, validationError, outputError, toCliError, classifyServerError } from '../errors.js';
 import { INTERNAL_FIELDS } from '../config/internal-fields.js';
+import { stripDeprecatedFields } from '../utils/strip-deprecated.js';
 
 interface MethodOpts {
   params?: string;
@@ -197,16 +198,18 @@ export async function executeMethod(
       // Task-level polling: track by task_id with progress reporting
       const taskId = params.task_id as string | undefined;
       if (taskId && method.httpMethod === 'GET' && method.path.endsWith('/tasks/:task_id')) {
-        await pollTask(authConfig, method, taskId, timeout);
+        await pollTask(authConfig, method, taskId, timeout, doc);
       } else {
         // Generic message/list polling: re-poll until no running items
         const msgResult = await pollMessages(authConfig, method, params, timeout);
+        stripDeprecatedFields(msgResult.data, method, doc);
         console.log(JSON.stringify(msgResult.data, null, 2));
       }
       return;
     }
 
-    // Normal output
+    // Normal output — strip deprecated fields before display
+    if (data) stripDeprecatedFields(data, method, doc);
     console.log(JSON.stringify(data, null, 2));
 
   } catch (err: unknown) {

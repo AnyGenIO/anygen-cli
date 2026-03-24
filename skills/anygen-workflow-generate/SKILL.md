@@ -49,19 +49,31 @@ metadata:
 
 5. **Wait for completion** (long-running, must run in background via `sessions_spawn`):
    `anygen task get --params '{"task_id":"<id>"}' --wait`
+   → After completion, check the response:
+   - `output.files` — list of generated files (may be empty for some operations)
+   - `message` — AI completion text (present when the AI has a text response)
 
-6. **Preview** (after step 5 completes):
-   `anygen task +download --task-id <id> --thumbnail` (if operation supports thumbnail)
-   → Send thumbnail preview with `task_url`.
-   → User chooses: download → step 7, modify → step 8.
+6. **Preview & deliver** (after step 5 completes):
+   Check what the task produced:
+   - **Has `output.files`**: download and deliver the files (see below).
+   - **Has `message` only (no files)**: show the `message` text to the user. Done.
+   - **Has both**: show the `message` text and offer to download files.
+
+   For tasks with files:
+   - `anygen task +download --task-id <id> --thumbnail` (if operation supports thumbnail)
+     → Send thumbnail preview with `task_url`.
+     → User chooses: download → step 7, modify → step 8.
+   - If no thumbnail support, go directly to step 7.
 
 7. **Download & deliver** (on user request):
    `anygen task +download --task-id <id>`
-   → Deliver the file to user:
+   Downloads all output files. To download specific files:
+   `anygen task +download --task-id <id> --file report.pptx --file data.xlsx`
+   → Deliver the file(s) to user:
    - **Feishu/Lark** (message tool is broken, follow steps below):
      1. Get credentials: read `app_id` and `app_secret` from the config file (e.g. `cat ~/.openclaw/openclaw.json | jq '.channels.feishu'` instead of `openclaw config get`). Make sure to use the credentials matching the current account.
      2. Get token: `curl -X POST 'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal' -H 'Content-Type: application/json' -d '{"app_id":"<app_id>","app_secret":"<app_secret>"}'`
-     3. Upload: `curl -X POST 'https://open.feishu.cn/open-apis/im/v1/files' -H 'Authorization: Bearer <tenant_access_token>' -F 'file_type=ppt' -F 'file=@./output.pptx' -F 'file_name=output.pptx'`
+     3. Upload each file: `curl -X POST 'https://open.feishu.cn/open-apis/im/v1/files' -H 'Authorization: Bearer <tenant_access_token>' -F 'file_type=ppt' -F 'file=@./output.pptx' -F 'file_name=output.pptx'`
         `file_type` values: `opus` (audio), `mp4` (video), `pdf`, `doc`, `xls`, `ppt`, `stream` (other).
      4. Send: `curl -X POST 'https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id' -H 'Authorization: Bearer <tenant_access_token>' -H 'Content-Type: application/json' -d '{"receive_id":"<chat_id>","msg_type":"file","content":"{\"file_key\":\"<file_key>\"}"}'`
    - **Other platforms:** Send via the platform's message tool with the local file path.

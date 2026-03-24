@@ -50,4 +50,6 @@ export interface Schema {
   enum?: string[];
   format?: string;
   additionalProperties?: Schema;
+  /** Whether this field is deprecated and should be hidden from CLI output */
+  deprecated?: boolean;
 }

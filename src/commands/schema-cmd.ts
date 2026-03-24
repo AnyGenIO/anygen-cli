@@ -242,7 +242,8 @@ function printPrettyFields(
     const enumStr = field.enum && field.enum.length > 0
       ? ` ${dim}— ${field.enum.join(' | ')}${reset}`
       : '';
-    console.log(`${indent}- ${cyan}${name}${reset} (${typeStr}, ${reqStr})${enumStr}`);
+    const deprecatedStr = field.deprecated ? ` ${dim}[deprecated]${reset}` : '';
+    console.log(`${indent}- ${cyan}${name}${reset} (${typeStr}, ${reqStr})${enumStr}${deprecatedStr}`);
     if (field.description) {
       console.log(`${indent}  ${dim}${field.description}${reset}`);
     }

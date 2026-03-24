@@ -10,6 +10,7 @@
 
 import type { Method } from '../discovery/types.js';
 import { validateResourceName } from '../security/validate.js';
+import { getDebugHeaders } from '../config/config.js';
 
 export interface ApiRequestOptions {
   baseUrl: string;
@@ -65,6 +66,7 @@ export async function callApi(opts: ApiRequestOptions): Promise<ApiResponse> {
   const headers: Record<string, string> = {
     'Accept': 'application/json',
     'Authorization': authToken,
+    ...getDebugHeaders(),
   };
 
   const fetchOpts: RequestInit = {

@@ -47,7 +47,8 @@ export async function loadConfig(overrides?: { apiKey?: string }): Promise<Anyge
     apiKeySource = 'none';
   }
 
-  return { baseUrl: BASE_URL, apiKey, apiKeySource, fetchToken: fileConfig.fetchToken };
+  const baseUrl = process.env.ANYGEN_BASE_URL || BASE_URL;
+  return { baseUrl, apiKey, apiKeySource, fetchToken: fileConfig.fetchToken };
 }
 
 /**
@@ -99,6 +100,25 @@ export async function removeApiKey(): Promise<void> {
 export async function getStoredApiKey(): Promise<string> {
   const config = await loadConfigFile();
   return config.apiKey || '';
+}
+
+/**
+ * Parse extra headers from ANYGEN_HEADERS env var for debug/PPE routing.
+ * Format: "key1:value1,key2:value2"
+ * Example: ANYGEN_HEADERS="x-use-ppe:1,x-tt-env:ppe_aidoc_xxx"
+ */
+export function getDebugHeaders(): Record<string, string> {
+  const raw = process.env.ANYGEN_HEADERS;
+  if (!raw) return {};
+
+  const headers: Record<string, string> = {};
+  for (const pair of raw.split(',')) {
+    const idx = pair.indexOf(':');
+    if (idx > 0) {
+      headers[pair.slice(0, idx).trim()] = pair.slice(idx + 1).trim();
+    }
+  }
+  return headers;
 }
 
 async function loadConfigFile(): Promise<{ apiKey?: string; fetchToken?: string }> {

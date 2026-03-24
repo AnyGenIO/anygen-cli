@@ -2,10 +2,11 @@
  * `anygen task +download` — helper command
  *
  * Download artifacts from a completed task.
- * Handles file download, thumbnail download, and smart_draw rendering.
+ * Supports multi-file download, selective download by name, and thumbnail.
  *
  * Example:
  *   anygen task +download --task-id <id> --output-dir ./output
+ *   anygen task +download --task-id <id> --file report.pptx --file data.xlsx
  */
 
 import * as fs from 'fs/promises';
@@ -19,6 +20,19 @@ import { validateSafeOutputDir } from '../security/validate.js';
 import { renderDiagram, type DiagramType } from '../render/diagram.js';
 import { ensureAuth } from '../api/auth.js';
 import { validationError, apiError, outputError, toCliError } from '../errors.js';
+
+interface OutputFile {
+  url: string;
+  name: string;
+  expires_at?: number;
+}
+
+interface DownloadOpts {
+  taskId: string;
+  outputDir?: string;
+  thumbnail?: boolean;
+  file?: string[];
+}
 
 /**
  * Register `task +download` as a helper subcommand under the `task` resource command.
@@ -37,14 +51,15 @@ export function registerTaskHelpers(
     .requiredOption('--task-id <id>', 'Task ID')
     .option('--output-dir <dir>', 'Local directory to save files (default: current directory)')
     .option('--thumbnail', 'Download thumbnail image instead of main file')
-    .action(async (opts: Record<string, string>) => {
+    .option('--file <name...>', 'Download specific file(s) by name (repeatable)')
+    .action(async (opts: DownloadOpts) => {
       await executeTaskDownload(getMethod, opts, config);
     });
 }
 
 async function executeTaskDownload(
   getMethod: Method,
-  opts: Record<string, string>,
+  opts: DownloadOpts,
   config: AnygenConfig,
 ): Promise<void> {
   const auth = await ensureAuth(config);
@@ -87,37 +102,100 @@ async function executeTaskDownload(
   const output = (taskData.output ?? {}) as Record<string, unknown>;
   const operation = taskData.operation as string | undefined;
 
-  let downloadedFile: string | null | undefined;
-
+  // Handle thumbnail download
   if (opts.thumbnail) {
-    // Download thumbnail only
     if (!output.thumbnail_url) {
       outputError(apiError('No thumbnail available for this task.'));
     }
-    const mainName = output.file_name as string | undefined;
-    const mainStem = mainName ? path.basename(mainName, path.extname(mainName)) : 'output';
-    downloadedFile = await downloadToLocal(output.thumbnail_url as string, `${mainStem}_thumbnail.png`, outputDir);
-  } else {
-    // Download main file
-    if (!output.file_url) {
-      outputError(apiError('No downloadable file found in task output.'));
-    }
-    const filePath = await downloadToLocal(output.file_url as string, output.file_name as string | undefined, outputDir);
-    if (filePath && operation === 'smart_draw') {
-      downloadedFile = await renderAndCleanup(filePath) ?? filePath;
-    } else {
-      downloadedFile = filePath;
+    const files = parseOutputFiles(output);
+    const stem = files.length > 0
+      ? path.basename(files[0].name, path.extname(files[0].name))
+      : 'output';
+    const downloadedFile = await downloadToLocal(
+      output.thumbnail_url as string,
+      `${stem}_thumbnail.png`,
+      outputDir,
+    );
+    const result: Record<string, unknown> = {
+      status: 'completed',
+      task_id: taskId,
+    };
+    if (downloadedFile) result.file = downloadedFile;
+    if (output.task_url) result.task_url = output.task_url;
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  // Parse files from output.files[] (new API) with fallback to file_url (legacy)
+  const allFiles = parseOutputFiles(output);
+  if (allFiles.length === 0) {
+    outputError(apiError('No downloadable file found in task output.'));
+  }
+
+  // Filter by --file names if specified
+  let filesToDownload = allFiles;
+  if (opts.file && opts.file.length > 0) {
+    const requestedNames = new Set(opts.file);
+    filesToDownload = allFiles.filter(f => requestedNames.has(f.name));
+    if (filesToDownload.length === 0) {
+      const available = allFiles.map(f => f.name).join(', ');
+      outputError(validationError(
+        `No matching files found for: ${opts.file.join(', ')}`,
+        `Available files: ${available}`,
+      ));
     }
   }
 
-  // Output result (JSON to stdout, like larksuite-cli runtime.Out)
+  // Download all selected files
+  const downloadedFiles: Array<{ file: string; name: string }> = [];
+  for (const f of filesToDownload) {
+    const filePath = await downloadToLocal(f.url, f.name, outputDir);
+    if (!filePath) continue;
+
+    // smart_draw: render diagram files to PNG
+    if (operation === 'smart_draw') {
+      const rendered = await renderAndCleanup(filePath);
+      downloadedFiles.push({
+        file: rendered ?? filePath,
+        name: rendered ? path.basename(rendered) : f.name,
+      });
+    } else {
+      downloadedFiles.push({ file: filePath, name: f.name });
+    }
+  }
+
+  // Output result
   const result: Record<string, unknown> = {
     status: 'completed',
     task_id: taskId,
+    files: downloadedFiles,
   };
-  if (downloadedFile) result.file = downloadedFile;
   if (output.task_url) result.task_url = output.task_url;
   console.log(JSON.stringify(result, null, 2));
+}
+
+/**
+ * Parse output files from the API response.
+ * Prefers output.files[] (new API), falls back to file_url/file_name (legacy).
+ */
+function parseOutputFiles(output: Record<string, unknown>): OutputFile[] {
+  // New API: output.files[]
+  const files = output.files as OutputFile[] | undefined;
+  if (Array.isArray(files) && files.length > 0) {
+    return files.filter(f => f.url && f.name);
+  }
+
+  // Legacy fallback: output.file_url + output.file_name
+  const fileUrl = output.file_url as string | undefined;
+  if (fileUrl) {
+    return [{
+      url: fileUrl,
+      name: (output.file_name as string) || 'output',
+      expires_at: output.expires_at as number | undefined,
+    }];
+  }
+
+  return [];
 }
 
 /**

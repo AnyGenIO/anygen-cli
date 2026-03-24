@@ -6,6 +6,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import type { DiscoveryDocument } from './types.js';
+import { getDebugHeaders } from '../config/config.js';
 
 const CACHE_DIR = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'anygen', 'cache');
 const CACHE_FILE = path.join(CACHE_DIR, 'discovery.json');
@@ -67,9 +68,8 @@ async function writeCache(doc: DiscoveryDocument): Promise<void> {
 
 async function fetchFromServer(baseUrl: string): Promise<DiscoveryDocument> {
   const url = `${baseUrl}/v1/openapi/document`;
-  const resp = await fetch(url, {
-    headers: { 'Accept': 'application/json' },
-  });
+  const headers: Record<string, string> = { 'Accept': 'application/json', ...getDebugHeaders() };
+  const resp = await fetch(url, { headers });
 
   if (!resp.ok) {
     throw new Error(`Failed to fetch Discovery Document: ${resp.status} ${resp.statusText}`);
