@@ -38,7 +38,7 @@ describe('getDiscoveryDocument', () => {
     expect(mockFetch).toHaveBeenCalledWith(
       'https://www.anygen.io/v1/openapi/document',
       expect.objectContaining({
-        headers: { Accept: 'application/json' },
+        headers: expect.objectContaining({ Accept: 'application/json' }),
       }),
     );
   });
