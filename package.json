@@ -1,6 +1,6 @@
 {
   "name": "@anygen/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "AnyGen CLI - AI-powered content generation platform",
   "type": "module",
   "bin": {
