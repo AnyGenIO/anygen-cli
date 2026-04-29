@@ -7,6 +7,7 @@ import type { AnygenConfig } from '../config/config.js';
 import type { DiscoveryDocument, Method } from '../discovery/types.js';
 import { apiError, outputError } from '../errors.js';
 import { stripDeprecatedFields } from '../utils/strip-deprecated.js';
+import { outputJson } from '../utils/output.js';
 
 /**
  * Fallback set for methods that support --wait polling.
@@ -93,7 +94,7 @@ export async function pollTask(
     if (status === 'completed') {
       process.stderr.write(`  \x1b[32m✓\x1b[0m Task completed\n`);
       if (doc) stripDeprecatedFields(data, taskGetMethod, doc);
-      console.log(JSON.stringify(data, null, 2));
+      outputJson(data);
       return;
     }
 

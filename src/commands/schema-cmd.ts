@@ -8,6 +8,7 @@
 import { Command } from 'commander';
 import type { DiscoveryDocument, Method, Schema } from '../discovery/types.js';
 import { validationError, outputError } from '../errors.js';
+import { outputJson } from '../utils/output.js';
 import { INTERNAL_FIELDS } from '../config/internal-fields.js';
 
 export function buildSchemaCommand(program: Command, doc: DiscoveryDocument): void {
@@ -122,7 +123,7 @@ function printMethodSchema(method: Method, doc: DiscoveryDocument): void {
     output.response = resolveRef(method.response, doc);
   }
 
-  console.log(JSON.stringify(output, null, 2));
+  outputJson(output);
 }
 
 /** Resolve a $ref schema to its full definition from doc.schemas. */

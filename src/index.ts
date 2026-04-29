@@ -18,6 +18,7 @@ import { buildAuthCommand } from './commands/auth-cmd.js';
 import { buildSkillCommand } from './commands/skill-cmd.js';
 import { CLI_VERSION } from './version.js';
 import { outputError, toCliError } from './errors.js';
+import { startUpdateCheck } from './utils/update-check.js';
 
 const program = new Command('anygen')
   .version(CLI_VERSION)
@@ -119,6 +120,7 @@ ENVIRONMENT:
 }
 
 async function main(): Promise<void> {
+  startUpdateCheck();
   const args = process.argv.slice(2);
 
   const skipDiscovery = ['auth', 'cache-clear', 'skill', '-V', '--version'].includes(args[0]);

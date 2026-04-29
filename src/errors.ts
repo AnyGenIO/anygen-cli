@@ -14,6 +14,8 @@
  *   internal    — CLI bug (should not happen)
  */
 
+import { outputJson } from './utils/output.js';
+
 export type ErrorType =
   | 'validation'
   | 'auth'
@@ -140,7 +142,7 @@ export function classifyServerError(code: number | undefined, message: string): 
  * Print error JSON to stdout and exit.
  */
 export function outputError(err: CliError): never {
-  console.log(JSON.stringify(err.toJSON(), null, 2));
+  outputJson(err.toJSON());
   process.exit(1);
 }
 

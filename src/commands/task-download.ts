@@ -20,6 +20,7 @@ import { validateSafeOutputDir } from '../security/validate.js';
 import { renderDiagram, type DiagramType } from '../render/diagram.js';
 import { ensureAuth } from '../api/auth.js';
 import { validationError, apiError, outputError, toCliError } from '../errors.js';
+import { outputJson } from '../utils/output.js';
 
 interface OutputFile {
   url: string;
@@ -122,7 +123,7 @@ async function executeTaskDownload(
     };
     if (downloadedFile) result.file = downloadedFile;
     if (output.task_url) result.task_url = output.task_url;
-    console.log(JSON.stringify(result, null, 2));
+    outputJson(result);
     return;
   }
 
@@ -171,7 +172,7 @@ async function executeTaskDownload(
     files: downloadedFiles,
   };
   if (output.task_url) result.task_url = output.task_url;
-  console.log(JSON.stringify(result, null, 2));
+  outputJson(result);
 }
 
 /**

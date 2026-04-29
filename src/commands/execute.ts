@@ -19,6 +19,7 @@ import { CliError, validationError, outputError, toCliError, classifyServerError
 import { INTERNAL_FIELDS } from '../config/internal-fields.js';
 import { stripDeprecatedFields } from '../utils/strip-deprecated.js';
 import { getDebugHeaders } from '../config/config.js';
+import { outputJson } from '../utils/output.js';
 
 interface MethodOpts {
   params?: string;
@@ -193,14 +194,14 @@ export async function executeMethod(
       if (Object.keys(dryBody).length === 0) dryBody = undefined;
     }
     const debugHeaders = getDebugHeaders();
-    console.log(JSON.stringify({
+    outputJson({
       dry_run: true,
       method: method.httpMethod,
       url,
       params: Object.keys(params).length > 0 ? params : undefined,
       body: dryBody,
       ...(Object.keys(debugHeaders).length > 0 ? { debug_headers: debugHeaders } : {}),
-    }, null, 2));
+    });
     return;
   }
 
@@ -235,14 +236,14 @@ export async function executeMethod(
         // Generic message/list polling: re-poll until no running items
         const msgResult = await pollMessages(authConfig, method, params, timeout);
         stripDeprecatedFields(msgResult.data, method, doc);
-        console.log(JSON.stringify(msgResult.data, null, 2));
+        outputJson(msgResult.data);
       }
       return;
     }
 
     // Normal output — strip deprecated fields before display
     if (data) stripDeprecatedFields(data, method, doc);
-    console.log(JSON.stringify(data, null, 2));
+    outputJson(data);
 
   } catch (err: unknown) {
     outputError(toCliError(err));
