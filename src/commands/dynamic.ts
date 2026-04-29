@@ -55,7 +55,8 @@ function buildResourceCommands(
       if (method.parameters && Object.keys(method.parameters).length > 0) {
         methodCmd.option('--params <json>', 'URL/path parameters as JSON');
       }
-      if (method.request) {
+      const hasBodyParams = method.parameters && Object.values(method.parameters).some(p => p.location === 'body');
+      if (method.request || hasBodyParams) {
         methodCmd.option('--data <json>', 'Request body as JSON');
       }
       methodCmd.option('--dry-run', 'Show the request without sending it');

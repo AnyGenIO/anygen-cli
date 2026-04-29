@@ -76,7 +76,7 @@ export async function executeMethod(
           if (!files) files = {};
           files[key] = { data: Buffer.from(data), filename: path.basename(absolutePath) };
           if (methodParams['filename'] && !body['filename']) {
-            params['filename'] = files[key].filename;
+            body['filename'] = files[key].filename;
           }
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -87,12 +87,41 @@ export async function executeMethod(
     }
   }
 
-  // Validate required URL parameters
+  // Handle binary params passed via --params for body-location parameters
+  if (!files) {
+    const methodParams = method.parameters ?? {};
+    for (const [key, paramDef] of Object.entries(methodParams)) {
+      if (paramDef.location === 'body' && paramDef.type === 'binary' && params[key]) {
+        const filePath = String(params[key]);
+        try {
+          const absolutePath = path.resolve(filePath);
+          const data = await fs.readFile(absolutePath);
+          if (!files) files = {};
+          if (!body) body = {};
+          files[key] = { data: Buffer.from(data), filename: path.basename(absolutePath) };
+          if (methodParams['filename'] && !body['filename'] && !params['filename']) {
+            body['filename'] = files[key].filename;
+          }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          outputError(validationError(`Cannot read file "${filePath}": ${msg}`));
+        }
+        delete params[key];
+      }
+    }
+  }
+
+  // Validate required parameters (check params, body, and files)
   if (method.parameters) {
     for (const [paramName, param] of Object.entries(method.parameters)) {
-      if (param.required && params[paramName] == null) {
+      if (!param.required) continue;
+      const inParams = params[paramName] != null;
+      const inBody = body?.[paramName] != null;
+      const inFiles = files?.[paramName] != null;
+      if (!inParams && !inBody && !inFiles) {
+        const src = param.location === 'body' ? '--data' : '--params';
         errorWithHelp(cmd, validationError(
-          `Missing required parameter "${paramName}" in --params`,
+          `Missing required parameter "${paramName}" in ${src}`,
           `Run: anygen schema ${method.id}`,
         ));
       }
